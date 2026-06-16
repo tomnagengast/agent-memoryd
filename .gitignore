@@ -14,5 +14,5 @@ plans/
 
 # Generated local data
 .agent-memoryd/
-agent-memoryd
+/agent-memoryd
 coverage.out
