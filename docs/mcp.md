@@ -1,7 +1,6 @@
 # MCP
 
-`agent-memoryd mcp` runs a stdio MCP server. Configure your MCP client to launch
-the binary with the `mcp` argument.
+`agent-memoryd mcp` runs a stdio MCP server. Configure your MCP client to launch the binary with the `mcp` argument.
 
 ```json
 {
@@ -93,8 +92,7 @@ Input:
 }
 ```
 
-If `id` is omitted, `agent-memoryd` generates one. If `summary` is omitted, it
-is derived from the body.
+If `id` is omitted, `agent-memoryd` generates one. If `summary` is omitted, it is derived from the body.
 
 ### forget
 
@@ -121,7 +119,4 @@ If no memory exists, `ok` is `false`.
 
 ## Usage Pattern
 
-Agents should treat memory retrieval as progressive disclosure: call `search`
-for compact summaries, then call `get` only for the ids that are relevant to the
-current task. Agents may call `add` and `forget` when they need to maintain
-durable memories during normal work.
+Agents should treat memory retrieval as progressive disclosure: call `search` for compact summaries, then call `get` only for the ids that are relevant to the current task. Agents may call `add` and `forget` when they need to maintain durable memories during normal work.

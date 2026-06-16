@@ -2,8 +2,7 @@
 
 `agent-memoryd` includes hook templates under `contrib/git-hooks/`.
 
-The templates enqueue commit events and return quickly. They do not run
-summarization or retrieval work inside git hooks.
+The templates enqueue commit events and return quickly. They do not run summarization or retrieval work inside git hooks.
 
 ## Included Hooks
 
@@ -11,13 +10,11 @@ summarization or retrieval work inside git hooks.
 
 `post-merge` enqueues the merge result.
 
-`post-rewrite` enqueues rewritten commits, such as commits produced by rebase or
-amend flows.
+`post-rewrite` enqueues rewritten commits, such as commits produced by rebase or amend flows.
 
 ## Install In One Repository
 
-Copy the hook templates into a repository's `.git/hooks` directory and make
-them executable:
+Copy the hook templates into a repository's `.git/hooks` directory and make them executable:
 
 ```sh
 cp contrib/git-hooks/post-commit /path/to/repo/.git/hooks/post-commit
@@ -44,5 +41,4 @@ The daemon converts queued events into `git-summary` memories.
 
 ## Scope
 
-`agent-memoryd uninstall --yes` removes resources that `agent-memoryd init`
-tracks. It does not edit repositories where you manually installed hook files.
+`agent-memoryd uninstall --yes` removes resources that `agent-memoryd init` tracks. It does not edit repositories where you manually installed hook files.

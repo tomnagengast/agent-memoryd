@@ -1,7 +1,6 @@
 # Install
 
-`agent-memoryd` is distributed as a single Go binary. The repository uses
-`mise` to pin the Go toolchain and expose the common development tasks.
+`agent-memoryd` is distributed as a single Go binary. The repository uses `mise` to pin the Go toolchain and expose the common development tasks.
 
 ## System Requirements
 
@@ -29,13 +28,11 @@ Verify the build:
 ./agent-memoryd status
 ```
 
-If the system has not been initialized yet, `status` still reports the planned
-resource paths for the default data root.
+If the system has not been initialized yet, `status` still reports the planned resource paths for the default data root.
 
 ## Initialize
 
-Create the local data root, default config, memory store, git spool, logs
-directory, and resource manifest:
+Create the local data root, default config, memory store, git spool, logs directory, and resource manifest:
 
 ```sh
 ./agent-memoryd init
@@ -55,9 +52,7 @@ AGENT_MEMORYD_HOME=/tmp/agent-memoryd ./agent-memoryd init
 
 ## Optional zvec Build
 
-The default build uses a pure-Go lexical index so contributors can run tests
-without native dependencies. The production retrieval path is available behind
-the `zvec` build tag.
+The default build uses a pure-Go lexical index so contributors can run tests without native dependencies. The production retrieval path is available behind the `zvec` build tag.
 
 Download the zvec native libraries and build the tagged binary:
 

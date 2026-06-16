@@ -1,7 +1,6 @@
 # agent-memoryd Docs
 
-Start with [Install](./install.md) and [Getting started](./getting-started.md)
-if you are trying the project for the first time.
+Start with [Install](./install.md) and [Getting started](./getting-started.md) if you are trying the project for the first time.
 
 ## Guides
 

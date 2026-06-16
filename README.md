@@ -2,10 +2,7 @@
 
 Local memory daemon for coding agents.
 
-`agent-memoryd` is a small local service and MCP server that lets coding agents
-search, fetch, add, and forget durable memories. The project is intended for
-fresh installs and public contribution, not migration from any one person's
-existing memory setup.
+`agent-memoryd` is a small local service and MCP server that lets coding agents search, fetch, add, and forget durable memories. The project is intended for fresh installs and public contribution, not migration from any one person's existing memory setup.
 
 ## Quick Start
 
@@ -52,11 +49,9 @@ Add and retrieve a memory from the CLI:
 
 ## Commands
 
-`init` creates the managed data root, config, memory store, git spool, logs
-directory, and resource manifest.
+`init` creates the managed data root, config, memory store, git spool, logs directory, and resource manifest.
 
-`status` prints system help, MCP tool help, loaded config, store status, and
-every resource persisted by `init`.
+`status` prints system help, MCP tool help, loaded config, store status, and every resource persisted by `init`.
 
 `mcp` runs the stdio MCP server.
 
@@ -96,14 +91,9 @@ mise run test
 mise run build
 ```
 
-The default build keeps source records in a local JSONL file and uses a small
-lexical search fallback so contributors can build and test without native zvec
-libraries.
+The default build keeps source records in a local JSONL file and uses a small lexical search fallback so contributors can build and test without native zvec libraries.
 
-The production retrieval index uses
-[`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go) behind the
-`zvec` build tag. That SDK uses cgo and native zvec libraries, so it is not
-required for the basic contributor test loop:
+The production retrieval index uses [`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go) behind the `zvec` build tag. That SDK uses cgo and native zvec libraries, so it is not required for the basic contributor test loop:
 
 ```sh
 mise run zvec-libs
@@ -119,14 +109,9 @@ mise run build-zvec
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
 - Retrieval: MCP tools and CLI commands share the same store.
 
-The daemon polls configured transcript roots, waits until a transcript is idle,
-then creates or updates a `session` memory. Git hooks do not summarize inline;
-they enqueue a small event file, and the daemon turns that into a `git-summary`
-memory out of band.
+The daemon polls configured transcript roots, waits until a transcript is idle, then creates or updates a `session` memory. Git hooks do not summarize inline; they enqueue a small event file, and the daemon turns that into a `git-summary` memory out of band.
 
-`agent-memoryd init` writes a resource manifest to the data root. `status` reads
-that manifest and reports whether each managed path exists. `uninstall --yes`
-uses the same manifest to tear down the local system resources it owns.
+`agent-memoryd init` writes a resource manifest to the data root. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
 
 See [docs/architecture.md](./docs/architecture.md) for more detail.
 

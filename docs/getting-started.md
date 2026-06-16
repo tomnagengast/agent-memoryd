@@ -11,8 +11,7 @@ mise run build
 ./agent-memoryd status
 ```
 
-`status` prints JSON with command help, MCP tool help, the loaded config, store
-status, and every resource tracked by the `init` manifest.
+`status` prints JSON with command help, MCP tool help, the loaded config, store status, and every resource tracked by the `init` manifest.
 
 ## Try The CLI
 
@@ -52,8 +51,7 @@ Run the stdio MCP server:
 ./agent-memoryd mcp
 ```
 
-Configure your MCP client to launch the binary with the `mcp` argument. A
-typical client entry looks like:
+Configure your MCP client to launch the binary with the `mcp` argument. A typical client entry looks like:
 
 ```json
 {
@@ -79,5 +77,4 @@ For a one-shot ingest pass:
 ./agent-memoryd scan-once
 ```
 
-The daemon waits until transcript files are idle before indexing them. See
-[daemon.md](./daemon.md) for ingestion details.
+The daemon waits until transcript files are idle before indexing them. See [daemon.md](./daemon.md) for ingestion details.
