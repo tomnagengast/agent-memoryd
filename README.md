@@ -31,6 +31,12 @@ Run the resident ingest worker manually:
 ./agent-memoryd daemon
 ```
 
+Explore memories interactively:
+
+```sh
+./agent-memoryd explore
+```
+
 Daemon transcript and git producers require a configured `summarizer_command`. The default uses `codex exec` in read-only ephemeral mode.
 
 Add and retrieve a memory from the CLI:
@@ -68,6 +74,8 @@ Add and retrieve a memory from the CLI:
 `daemon` runs the resident ingest worker. `scan-once` runs one ingest pass.
 
 `add`, `search`, `get`, and `forget` manage memories from the CLI.
+
+`explore` opens an interactive memory browser with a live search bar, navigable result list, and full-memory detail pane.
 
 `enqueue-git` queues a git event for the daemon to summarize later.
 

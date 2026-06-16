@@ -36,6 +36,12 @@ Search summaries:
 ./agent-memoryd search --project example "durable local notes"
 ```
 
+Explore memories interactively:
+
+```sh
+./agent-memoryd explore
+```
+
 Fetch the full memory by id:
 
 ```sh

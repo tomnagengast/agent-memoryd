@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tomnagengast/agent-memoryd/internal/config"
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
+	"github.com/tomnagengast/agent-memoryd/internal/explore"
 	"github.com/tomnagengast/agent-memoryd/internal/githooks"
 	"github.com/tomnagengast/agent-memoryd/internal/importmem"
 	"github.com/tomnagengast/agent-memoryd/internal/indexer"
@@ -72,6 +73,7 @@ func newRootCommand() *cobra.Command {
 		newSearchCommand(),
 		newGetCommand(),
 		newForgetCommand(),
+		newExploreCommand(),
 		newReindexCommand(),
 		newMCPCommand(),
 		newDaemonCommand(),
@@ -289,6 +291,24 @@ func newForgetCommand() *cobra.Command {
 			return printJSON(map[string]any{"ok": true, "id": args[0]})
 		},
 	}
+}
+
+func newExploreCommand() *cobra.Command {
+	var opts explore.Options
+	cmd := &cobra.Command{
+		Use:   "explore",
+		Short: "Explore memories in an interactive TUI.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, store, err := loadIndexedStore()
+			if err != nil {
+				return err
+			}
+			return explore.Run(cmd.Context(), store, opts)
+		},
+	}
+	cmd.Flags().IntVar(&opts.Limit, "limit", 100, "maximum memories to show")
+	return cmd
 }
 
 func newReindexCommand() *cobra.Command {
@@ -654,6 +674,7 @@ var commandHelp = []helpItem{
 	{Name: "search", Summary: "search memory summaries"},
 	{Name: "get", Summary: "fetch one full memory"},
 	{Name: "forget", Summary: "delete one memory"},
+	{Name: "explore", Summary: "explore memories in an interactive TUI"},
 	{Name: "reindex", Summary: "rebuild the configured retrieval index from the source store"},
 }
 
