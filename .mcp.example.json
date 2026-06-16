@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-memoryd": {
+      "type": "stdio",
+      "command": "agent-memoryd",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}
