@@ -7,6 +7,35 @@ search, fetch, add, and forget durable memories. The project is intended for
 fresh installs and public contribution, not migration from any one person's
 existing memory setup.
 
+## Quick Start
+
+```sh
+mise install
+mise run build
+./agent-memoryd init
+./agent-memoryd status
+```
+
+Run the MCP server over stdio:
+
+```sh
+./agent-memoryd mcp
+```
+
+Run the resident ingest worker:
+
+```sh
+./agent-memoryd daemon
+```
+
+Add and retrieve a memory from the CLI:
+
+```sh
+./agent-memoryd add --project example --summary "Uses local memory" \
+  "agent-memoryd stores durable local memories for coding agents."
+./agent-memoryd search --project example "local memory"
+```
+
 ## Goals
 
 - Local-first memory store for coding agents
@@ -21,6 +50,42 @@ existing memory setup.
 - Requiring a hosted service
 - Requiring users to adopt a specific coding-agent harness
 
+## Commands
+
+`init` creates the managed data root, config, memory store, git spool, logs
+directory, and resource manifest.
+
+`status` prints system help, MCP tool help, loaded config, store status, and
+every resource persisted by `init`.
+
+`mcp` runs the stdio MCP server.
+
+`daemon` runs the resident ingest worker. `scan-once` runs one ingest pass.
+
+`add`, `search`, `get`, and `forget` manage memories from the CLI.
+
+`enqueue-git` queues a git event for the daemon to summarize later.
+
+`launchd-plist` renders a macOS LaunchAgent plist to stdout.
+
+`reindex` rebuilds the configured retrieval index from `memories.jsonl`.
+
+`uninstall --yes` removes managed `agent-memoryd` resources.
+
+## Docs
+
+- [Docs index](./docs/README.md)
+- [Install](./docs/install.md)
+- [Getting started](./docs/getting-started.md)
+- [Config](./docs/config.md)
+- [Architecture](./docs/architecture.md)
+- [MCP](./docs/mcp.md)
+- [Daemon](./docs/daemon.md)
+- [Git hooks](./docs/git-hooks.md)
+- [zvec](./docs/zvec.md)
+- [Uninstall](./docs/uninstall.md)
+- [Contributing](./docs/contributing.md)
+
 ## Development
 
 This project uses mise for tool and task management.
@@ -31,58 +96,14 @@ mise run test
 mise run build
 ```
 
-Initialize local config:
-
-```sh
-agent-memoryd init
-```
-
-Inspect the system, including command help and every managed resource created by
-`init`:
-
-```sh
-agent-memoryd status
-```
-
-Run the MCP server over stdio:
-
-```sh
-agent-memoryd mcp
-```
-
-Run the resident worker:
-
-```sh
-agent-memoryd daemon
-```
-
-Generate a launchd plist:
-
-```sh
-agent-memoryd launchd-plist --bin "$(command -v agent-memoryd)"
-```
-
-Queue a git summary event:
-
-```sh
-agent-memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
-```
-
-Remove the managed data root, config, manifest, store, index, spool, logs, and
-LaunchAgent plist if present:
-
-```sh
-agent-memoryd uninstall --yes
-```
-
 The default build keeps source records in a local JSONL file and uses a small
 lexical search fallback so contributors can build and test without native zvec
 libraries.
 
-The production retrieval index will use
-[`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go). That SDK uses
-cgo and native zvec libraries, so it will be integrated behind a narrow index
-adapter instead of being required for the basic contributor test loop:
+The production retrieval index uses
+[`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go) behind the
+`zvec` build tag. That SDK uses cgo and native zvec libraries, so it is not
+required for the basic contributor test loop:
 
 ```sh
 mise run zvec-libs
@@ -98,7 +119,7 @@ mise run build-zvec
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
 - Retrieval: MCP tools and CLI commands share the same store.
 
-The daemon watches configured transcript roots, waits until a transcript is idle,
+The daemon polls configured transcript roots, waits until a transcript is idle,
 then creates or updates a `session` memory. Git hooks do not summarize inline;
 they enqueue a small event file, and the daemon turns that into a `git-summary`
 memory out of band.
@@ -106,6 +127,8 @@ memory out of band.
 `agent-memoryd init` writes a resource manifest to the data root. `status` reads
 that manifest and reports whether each managed path exists. `uninstall --yes`
 uses the same manifest to tear down the local system resources it owns.
+
+See [docs/architecture.md](./docs/architecture.md) for more detail.
 
 ## MCP Tools
 
@@ -124,3 +147,5 @@ Creates or updates a memory.
 `forget(id)`
 
 Deletes a memory from the local source store and derived index.
+
+See [docs/mcp.md](./docs/mcp.md) for MCP configuration and schemas.
