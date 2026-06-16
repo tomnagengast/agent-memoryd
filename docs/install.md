@@ -33,10 +33,18 @@ Verify the build:
 
 ## Initialize
 
-Create the local data root, default config, memory store, git spool, logs directory, and resource manifest:
+Create the local data root, default config, memory store, git spool, logs directory, resource manifest, and managed daemon service:
 
 ```sh
 ./agent-memoryd init
+```
+
+On macOS, `init` writes `~/Library/LaunchAgents/dev.agent-memoryd.plist`, bootstraps it with launchd, and kickstarts `agent-memoryd daemon`. On other platforms, launchd setup is skipped.
+
+Use `--no-daemon` if you only want to create the local files:
+
+```sh
+./agent-memoryd init --no-daemon
 ```
 
 By default the data root is:

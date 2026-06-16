@@ -2,6 +2,10 @@
 
 `agent-memoryd daemon` runs the resident ingest worker. It processes queued git events and scans configured transcript roots on a polling interval.
 
+On macOS, `agent-memoryd init` installs and starts this daemon through launchd by default. Use `agent-memoryd init --no-daemon` to skip service setup.
+
+Run the daemon in the foreground:
+
 ```sh
 ./agent-memoryd daemon
 ```
@@ -53,13 +57,21 @@ You can replace `summarizer_command` in `config.json` with another local agent c
 
 ## launchd
 
-Render a macOS LaunchAgent plist:
+`init` writes the managed LaunchAgent to:
+
+```text
+~/Library/LaunchAgents/dev.agent-memoryd.plist
+```
+
+It then runs `launchctl bootstrap` and `launchctl kickstart` so the daemon is up immediately.
+
+Render a macOS LaunchAgent plist without installing it:
 
 ```sh
 ./agent-memoryd launchd-plist --bin /absolute/path/to/agent-memoryd
 ```
 
-The command writes plist XML to stdout. It does not install or load the service. If you install it at the standard managed path, `~/Library/LaunchAgents/dev.agent-memoryd.plist`, then `uninstall --yes` will try to boot it out and remove it.
+The command writes plist XML to stdout for inspection or advanced manual installs.
 
 ## Logs
 

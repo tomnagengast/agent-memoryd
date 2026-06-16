@@ -1,6 +1,6 @@
 # Uninstall
 
-`agent-memoryd init` writes a resource manifest so the system can show and remove the resources it owns.
+`agent-memoryd init` writes a resource manifest so the system can show and remove the resources it owns. On macOS, `init` also starts the managed launchd service.
 
 Inspect the current system:
 
@@ -30,7 +30,7 @@ agent-memoryd uninstall --yes
 
 This removes the configured data root, including the config file, resource manifest, `memories.jsonl`, zvec index directory, git spool, and logs.
 
-If `~/Library/LaunchAgents/dev.agent-memoryd.plist` exists and is tracked by the manifest, uninstall also tries to unload it with `launchctl bootout` and remove the plist.
+If `~/Library/LaunchAgents/dev.agent-memoryd.plist` exists and is tracked by the manifest, uninstall also unloads it with `launchctl bootout` and removes the plist.
 
 ## Not Removed
 

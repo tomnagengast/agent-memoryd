@@ -12,7 +12,9 @@ mise run build
 ./agent-memoryd status
 ```
 
-`status` prints JSON with command help, MCP tool help, the loaded config, store status, and every resource tracked by the `init` manifest.
+On macOS, `init` installs and starts the managed launchd daemon. The daemon begins polling the configured transcript roots and git event spool immediately. Use `./agent-memoryd init --no-daemon` to create files without starting the background service.
+
+`status` prints JSON with command help, MCP tool help, the loaded config, store status, launchd service status, and every resource tracked by the `init` manifest.
 
 ## Try The CLI
 
@@ -64,9 +66,9 @@ Configure your MCP client to launch the binary with the `mcp` argument. A typica
 }
 ```
 
-## Run The Daemon
+## Run The Daemon Manually
 
-The daemon polls configured transcript roots and the git event spool:
+`init` starts the daemon through launchd on macOS. To run the daemon in the foreground instead:
 
 ```sh
 ./agent-memoryd daemon
@@ -74,7 +76,7 @@ The daemon polls configured transcript roots and the git event spool:
 
 The default daemon summarizer uses `codex exec`. Edit `summarizer_command` in `config.json` if you want another local summarization agent.
 
-For a one-shot ingest pass:
+For a one-shot ingest pass without staying resident:
 
 ```sh
 ./agent-memoryd scan-once

@@ -24,7 +24,7 @@ Deletion uses `forget`. The record is removed from the source store and the deri
 
 ## Lifecycle Flow
 
-`init` creates the managed data root and records the resources it owns in `resources.json`.
+`init` creates the managed data root and records the resources it owns in `resources.json`. On macOS it also writes the standard LaunchAgent plist, bootstraps it with launchd, and kickstarts the daemon. `init --no-daemon` skips that service setup.
 
 `status` reads the manifest and reports command help, MCP tool help, config, store status, and whether every managed path exists.
 
@@ -32,4 +32,4 @@ Deletion uses `forget`. The record is removed from the source store and the deri
 
 ## Current Boundaries
 
-The daemon polls configured paths instead of using native file system events. The MCP server is stdio only. The launchd command renders a plist to stdout; it does not install or load the service automatically.
+The daemon polls configured paths instead of using native file system events. The MCP server is stdio only. The `launchd-plist` command renders a plist to stdout for inspection or advanced manual installs.

@@ -14,13 +14,15 @@ mise run build
 ./agent-memoryd status
 ```
 
+On macOS, `init` also installs and starts the managed launchd daemon. Use `./agent-memoryd init --no-daemon` if you only want to create the local files.
+
 Run the MCP server over stdio:
 
 ```sh
 ./agent-memoryd mcp
 ```
 
-Run the resident ingest worker:
+Run the resident ingest worker manually:
 
 ```sh
 ./agent-memoryd daemon
@@ -52,9 +54,9 @@ Add and retrieve a memory from the CLI:
 
 ## Commands
 
-`init` creates the managed data root, config, memory store, git spool, logs directory, and resource manifest.
+`init` creates the managed data root, config, memory store, git spool, logs directory, and resource manifest. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
 
-`status` prints system help, MCP tool help, loaded config, store status, and every resource persisted by `init`.
+`status` prints system help, MCP tool help, loaded config, store status, launchd service status, and every resource persisted by `init`.
 
 `help` and `--help` show command help. `completion` generates shell completion scripts.
 
@@ -66,7 +68,7 @@ Add and retrieve a memory from the CLI:
 
 `enqueue-git` queues a git event for the daemon to summarize later.
 
-`launchd-plist` renders a macOS LaunchAgent plist to stdout.
+`launchd-plist` renders a macOS LaunchAgent plist to stdout for manual inspection or advanced installs.
 
 `reindex` rebuilds the configured retrieval index from `memories.jsonl`.
 
@@ -116,7 +118,7 @@ mise run build-zvec
 
 The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. The MCP `reflect` tool uses the same summarizer path for the current session. These producers store distilled memories with transcript, session, or commit references, not raw logs.
 
-`agent-memoryd init` writes a resource manifest to the data root. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
+`agent-memoryd init` writes a resource manifest to the data root and starts the managed LaunchAgent on macOS. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
 
 See [docs/architecture.md](./docs/architecture.md) for more detail.
 

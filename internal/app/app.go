@@ -71,14 +71,37 @@ func newRootCommand() *cobra.Command {
 
 func newInitCommand() *cobra.Command {
 	var path string
+	var noDaemon bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create config, data directories, memory store, and resource manifest.",
+		Short: "Create config, data directories, memory store, resource manifest, and daemon service.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, manifest, err := config.Init(path)
 			if err != nil {
 				return err
+			}
+			var service any = map[string]any{"started": false, "skipped": "disabled by --no-daemon"}
+			if !noDaemon {
+				exe, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				status, err := launchd.InstallAndStart(launchd.Config{
+					Label:     "dev.agent-memoryd",
+					Binary:    exe,
+					Root:      cfg.Root,
+					LogDir:    filepath.Join(cfg.Root, "logs"),
+					PlistPath: config.LaunchdPlistPath(),
+				})
+				if err != nil {
+					return err
+				}
+				service = status
+				manifest, err = config.LoadManifest(cfg.Root)
+				if err != nil {
+					return err
+				}
 			}
 			out := config.ConfigPath(cfg.Root)
 			if path != "" {
@@ -89,10 +112,12 @@ func newInitCommand() *cobra.Command {
 				"config":    out,
 				"manifest":  config.ManifestPath(cfg.Root),
 				"resources": manifest.Resources,
+				"service":   service,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&path, "path", "", "config path")
+	cmd.Flags().BoolVar(&noDaemon, "no-daemon", false, "do not install or start the launchd daemon")
 	return cmd
 }
 
@@ -384,7 +409,11 @@ func runStatus(ctx context.Context, cfg config.Config) error {
 		"help":        systemHelp(),
 		"config":      cfg,
 		"store":       status,
-		"resources":   manifest.Resources,
+		"service": launchd.CurrentStatus(launchd.Config{
+			Label:     "dev.agent-memoryd",
+			PlistPath: config.LaunchdPlistPath(),
+		}),
+		"resources": manifest.Resources,
 	})
 }
 

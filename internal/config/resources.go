@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tomnagengast/agent-memoryd/internal/launchd"
 )
 
 const manifestVersion = 1
@@ -112,8 +112,7 @@ func ManifestPath(root string) string {
 func Uninstall(cfg Config, manifest Manifest) error {
 	for _, resource := range manifest.Resources {
 		if resource.Type == "launchd-plist" && resource.Managed && exists(resource.Path) {
-			_ = bootoutLaunchAgent(resource.Path)
-			if err := os.Remove(resource.Path); err != nil && !os.IsNotExist(err) {
+			if err := launchd.BootoutAndRemove(resource.Path); err != nil {
 				return fmt.Errorf("remove launchd plist: %w", err)
 			}
 		}
@@ -143,7 +142,7 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "zvec index", Type: "index-directory", Path: cfg.ZvecPath, Managed: true},
 		{Name: "git event spool", Type: "directory", Path: cfg.SpoolDir, Managed: true},
 		{Name: "logs", Type: "directory", Path: filepath.Join(cfg.Root, "logs"), Managed: true},
-		{Name: "launchd plist", Type: "launchd-plist", Path: launchdPlistPath(), Managed: true},
+		{Name: "launchd plist", Type: "launchd-plist", Path: LaunchdPlistPath(), Managed: true},
 	}
 }
 
@@ -183,14 +182,8 @@ func writeDefaultTo(path string, cfg Config) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-func launchdPlistPath() string {
+func LaunchdPlistPath() string {
 	return filepath.Join(homeDir(), "Library", "LaunchAgents", "dev.agent-memoryd.plist")
-}
-
-func bootoutLaunchAgent(path string) error {
-	uid := strconv.Itoa(os.Getuid())
-	cmd := exec.Command("launchctl", "bootout", "gui/"+uid, path)
-	return cmd.Run()
 }
 
 func isWithin(path, root string) bool {
