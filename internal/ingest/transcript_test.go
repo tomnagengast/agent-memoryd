@@ -2,27 +2,40 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tomnagengast/agent-memoryd/internal/ingeststate"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
 type fakeTranscriptSummarizer struct {
 	req summarizer.Request
+	n   int
 }
 
 func (f *fakeTranscriptSummarizer) Summarize(_ context.Context, req summarizer.Request) (summarizer.Result, error) {
 	f.req = req
+	f.n++
 	return summarizer.Result{Memories: []summarizer.GeneratedMemory{{
 		Kind:    "preference",
 		Summary: "Distilled preference",
 		Body:    "User prefers durable memories to be distilled rather than copied.",
 	}}}, nil
+}
+
+type failingTranscriptSummarizer struct {
+	n int
+}
+
+func (f *failingTranscriptSummarizer) Summarize(context.Context, summarizer.Request) (summarizer.Result, error) {
+	f.n++
+	return summarizer.Result{}, errors.New("summarizer unavailable")
 }
 
 func TestScannerStoresSummarizedTranscriptMemoryWithSourceReference(t *testing.T) {
@@ -124,5 +137,80 @@ func TestScannerSkipsTranscriptsOlderThanCutoff(t *testing.T) {
 	}
 	if fake.req.Producer != "" {
 		t.Fatalf("summarizer was called for old transcript: %#v", fake.req)
+	}
+}
+
+func TestScannerStateSkipsProcessedTranscriptFingerprint(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	transcript := filepath.Join(root, "session.jsonl")
+	data := `{"cwd":"/tmp/agent-memoryd","message":{"role":"user","content":"remember this once"}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(data), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	modTime := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(transcript, modTime, modTime); err != nil {
+		t.Fatalf("chtime transcript: %v", err)
+	}
+	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	state := &ingeststate.State{Inputs: map[string]ingeststate.Input{}}
+	fake := &fakeTranscriptSummarizer{}
+	scanner := Scanner{
+		Roots:      []string{root},
+		Summarizer: fake,
+		State:      state,
+		Now:        modTime.Add(time.Hour),
+	}
+
+	first, err := scanner.Scan(ctx, store)
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	second, err := scanner.Scan(ctx, store)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if first != 1 || second != 0 {
+		t.Fatalf("scan counts = %d, %d; want 1, 0", first, second)
+	}
+	if fake.n != 1 {
+		t.Fatalf("summarizer calls = %d, want 1", fake.n)
+	}
+}
+
+func TestScannerStateQuarantinesRepeatedTranscriptFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	transcript := filepath.Join(root, "session.jsonl")
+	data := `{"cwd":"/tmp/agent-memoryd","message":{"role":"user","content":"bad transcript"}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(data), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	modTime := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(transcript, modTime, modTime); err != nil {
+		t.Fatalf("chtime transcript: %v", err)
+	}
+	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	state := &ingeststate.State{Inputs: map[string]ingeststate.Input{}}
+	fake := &failingTranscriptSummarizer{}
+	scanner := Scanner{
+		Roots:      []string{root},
+		Summarizer: fake,
+		State:      state,
+	}
+	for i := 0; i < 4; i++ {
+		scanner.Now = modTime.Add(time.Duration(i) * 10 * time.Minute)
+		if _, err := scanner.Scan(ctx, store); err != nil {
+			t.Fatalf("scan %d: %v", i, err)
+		}
+	}
+	if fake.n != 3 {
+		t.Fatalf("summarizer calls = %d, want 3 before quarantine", fake.n)
+	}
+	input := state.Inputs["transcript:"+transcript]
+	if input.Status != "quarantined" {
+		t.Fatalf("input status = %q, want quarantined", input.Status)
 	}
 }

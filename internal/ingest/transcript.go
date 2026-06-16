@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tomnagengast/agent-memoryd/internal/ingeststate"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
@@ -23,6 +24,8 @@ type Scanner struct {
 	NotBefore          time.Time
 	Summarizer         summarizer.Agent
 	MemoryContextLimit int
+	State              *ingeststate.State
+	Now                time.Time
 }
 
 func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
@@ -48,14 +51,31 @@ func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
 			if !s.NotBefore.IsZero() && info.ModTime().Before(s.NotBefore) {
 				return nil
 			}
+			key := "transcript:" + path
+			fingerprint := fileID(path, info)
+			now := s.now()
+			if !s.State.ShouldProcess(key, fingerprint, now) {
+				return nil
+			}
 			transcript, err := parseTranscript(path, info)
-			if err != nil || transcript.SourceMaterial == "" {
+			if err != nil {
+				if s.State != nil {
+					s.State.MarkFailed(key, fingerprint, err, now)
+				}
+				return nil
+			}
+			if transcript.SourceMaterial == "" {
 				return nil
 			}
 			records, err := StoreTranscriptMemories(ctx, store, s.Summarizer, s.MemoryContextLimit, transcript, info.ModTime().UTC())
 			if err != nil {
+				if s.State != nil {
+					s.State.MarkFailed(key, fingerprint, err, now)
+					return nil
+				}
 				return err
 			}
+			s.State.MarkProcessed(key, fingerprint, now)
 			ingested += len(records)
 			return nil
 		})
@@ -64,6 +84,13 @@ func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
 		}
 	}
 	return ingested, nil
+}
+
+func (s Scanner) now() time.Time {
+	if !s.Now.IsZero() {
+		return s.Now
+	}
+	return time.Now()
 }
 
 type Transcript struct {

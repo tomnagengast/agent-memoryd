@@ -134,6 +134,8 @@ mise run zvec-libs
 mise run build-zvec
 ```
 
+Tagged releases publish lexical macOS and Linux binaries through GitHub Releases. See [docs/install.md](./docs/install.md#install-from-a-github-release) for the install command and asset naming.
+
 ## Architecture
 
 `agent-memoryd` has four layers:

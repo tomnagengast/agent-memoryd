@@ -3,6 +3,7 @@ package spool
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tomnagengast/agent-memoryd/internal/ingeststate"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
@@ -44,7 +46,7 @@ func EnqueueGit(dir string, event GitEvent) (string, error) {
 	return path, os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-func ProcessGit(ctx context.Context, dir string, store *memory.Store, agent summarizer.Agent, contextLimit int) (int, error) {
+func ProcessGit(ctx context.Context, dir string, store *memory.Store, agent summarizer.Agent, contextLimit int, state *ingeststate.State) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -66,15 +68,43 @@ func ProcessGit(ctx context.Context, dir string, store *memory.Store, agent summ
 		if err := json.Unmarshal(data, &event); err != nil {
 			return processed, fmt.Errorf("decode git event %s: %w", path, err)
 		}
+		key := "git:" + entry.Name()
+		fingerprint := eventFingerprint(data)
+		now := time.Now()
+		if !state.ShouldProcess(key, fingerprint, now) {
+			continue
+		}
 		if err := addGitMemory(ctx, store, event, agent, contextLimit); err != nil {
+			if state != nil {
+				input := state.MarkFailed(key, fingerprint, err, now)
+				if input.Status == "quarantined" {
+					if moveErr := moveFailedEvent(dir, path); moveErr != nil {
+						return processed, moveErr
+					}
+				}
+				continue
+			}
 			return processed, err
 		}
 		if err := os.Remove(path); err != nil {
 			return processed, fmt.Errorf("remove git event: %w", err)
 		}
+		state.MarkProcessed(key, fingerprint, now)
 		processed++
 	}
 	return processed, nil
+}
+
+func moveFailedEvent(dir, path string) error {
+	failedDir := filepath.Join(dir, "failed")
+	if err := os.MkdirAll(failedDir, 0o755); err != nil {
+		return fmt.Errorf("create failed spool dir: %w", err)
+	}
+	dst := filepath.Join(failedDir, filepath.Base(path))
+	if err := os.Rename(path, dst); err != nil {
+		return fmt.Errorf("move failed git event: %w", err)
+	}
+	return nil
 }
 
 func addGitMemory(ctx context.Context, store *memory.Store, event GitEvent, agent summarizer.Agent, contextLimit int) error {
@@ -163,4 +193,9 @@ func stableID(value string) string {
 		out *= 1099511628211
 	}
 	return fmt.Sprintf("%016x", out)
+}
+
+func eventFingerprint(data []byte) string {
+	sum := sha1.Sum(data)
+	return hex.EncodeToString(sum[:])
 }

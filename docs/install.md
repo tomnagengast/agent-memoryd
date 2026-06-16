@@ -48,6 +48,31 @@ agent-memoryd init
 
 Release builds can set `AGENT_MEMORYD_VERSION`, usually to a semver tag such as `v0.1.0`. Without that override, the build task uses `git describe --tags --always --dirty`.
 
+## Install From A GitHub Release
+
+Release assets are published for the default lexical build on macOS and Linux, for amd64 and arm64. Choose a tag and install the matching asset:
+
+```sh
+version="v0.1.0"
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$(uname -m)" in
+  arm64|aarch64) arch="arm64" ;;
+  x86_64|amd64) arch="amd64" ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+curl -L \
+  -o /tmp/agent-memoryd.tar.gz \
+  "https://github.com/tomnagengast/agent-memoryd/releases/download/${version}/agent-memoryd_${version}_${os}_${arch}.tar.gz"
+tar -xzf /tmp/agent-memoryd.tar.gz -C /tmp agent-memoryd
+mkdir -p ~/.local/bin
+install -m 755 /tmp/agent-memoryd ~/.local/bin/agent-memoryd
+agent-memoryd --version
+agent-memoryd init
+```
+
+Each release also includes `checksums.txt`.
+
 ## Initialize
 
 Create the local data root, default config, memory store, git spool, managed global Git hooks, logs directory, resource manifest, and managed daemon service:

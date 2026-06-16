@@ -140,6 +140,7 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "config file", Type: "config-file", Path: configPath, Managed: true},
 		{Name: "resource manifest", Type: "manifest-file", Path: ManifestPath(cfg.Root), Managed: true},
 		{Name: "memory source store", Type: "data-file", Path: cfg.StorePath, Managed: true},
+		{Name: "ingest state", Type: "data-file", Path: IngestStatePath(cfg.Root), Managed: true},
 		{Name: "zvec index", Type: "index-directory", Path: cfg.ZvecPath, Managed: true},
 		{Name: "git event spool", Type: "directory", Path: cfg.SpoolDir, Managed: true},
 		{Name: "global git hooks", Type: "directory", Path: gitHooksDir, Managed: true},
@@ -193,6 +194,10 @@ func LaunchdPlistPath() string {
 
 func ManagedGitHooksPath(root string) string {
 	return filepath.Join(root, "git-hooks")
+}
+
+func IngestStatePath(root string) string {
+	return filepath.Join(root, "ingest-state.json")
 }
 
 func isWithin(path, root string) bool {

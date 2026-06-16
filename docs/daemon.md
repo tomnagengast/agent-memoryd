@@ -29,6 +29,8 @@ A transcript must be unchanged for `idle_after` before it is indexed. The daemon
 
 The summarizer returns zero or more distilled memories. Those memories should capture durable information learned during the session, such as user preferences, standing instructions, project decisions, or follow-up context. Stored memories include the transcript path in `source` and a `More detail: Transcript: ...` reference in the body for progressive disclosure.
 
+Processed transcript fingerprints are recorded in `ingest-state.json`, so unchanged transcripts are not summarized again on every daemon poll. If summarization fails, the daemon records the failure, backs off retries, and quarantines that transcript fingerprint after repeated failures. A later transcript modification changes the fingerprint and makes it eligible again.
+
 The MCP `reflect` tool uses the same summarizer behavior on demand. It can summarize session text supplied by the MCP client, an explicit transcript path, or the newest configured transcript.
 
 ## Git Event Ingestion
@@ -44,6 +46,8 @@ Git hooks should not summarize commits inline. They enqueue a small event file w
 The daemon later reads the event, runs `git show --stat`, and passes that git summary plus existing memory summaries to the same configured summarizer. The raw git output is not stored as the memory body.
 
 The summarizer returns zero or more distilled memories. Stored git memories include `repo@sha` in `source` and a `More detail:` reference with the commit and local repository path for progressive disclosure. The event file is removed after the event is successfully processed.
+
+Git event failures are tracked in `ingest-state.json` with the same backoff behavior. After repeated failures, the event is moved to `spool/failed/` so the top-level spool does not block future events.
 
 ## Summarizer Command
 

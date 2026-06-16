@@ -49,6 +49,8 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `store_path` is the JSONL source store. It is the rebuildable source of truth for memories.
 
+`ingest-state.json` is managed operational state under `root`. It records transcript and git event fingerprints that were processed, failed, or quarantined so the daemon does not retry the same unchanged source every poll.
+
 `index_backend` selects the retrieval index. Use `lexical` for the default pure Go build or `zvec` for a binary built with `mise run build-zvec`.
 
 `zvec_path` is the on-disk zvec index directory.
@@ -75,4 +77,4 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 ## Resource Manifest
 
-`init` writes `resources.json` so later lifecycle commands can show and remove the resources `agent-memoryd` owns. `status` reports each resource with an `exists` flag. The manifest includes the managed global Git hooks directory and hook files.
+`init` writes `resources.json` so later lifecycle commands can show and remove the resources `agent-memoryd` owns. `status` reports each resource with an `exists` flag. The manifest includes the ingest state file, managed global Git hooks directory, and hook files.

@@ -18,12 +18,23 @@ mise run test
 mise run build
 ```
 
+GitHub Actions runs formatting, tests, and the default build on pushes to `main` and pull requests.
+
 For zvec-specific changes, also run:
 
 ```sh
 mise run zvec-libs
 mise run build-zvec
 ```
+
+Create a GitHub release by pushing a semver tag:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow publishes default lexical binaries for macOS and Linux.
 
 ## Project Shape
 
