@@ -35,6 +35,8 @@ Config and lifecycle resources live in `internal/config`.
 
 Daemon ingestion lives in `internal/daemon`, `internal/ingest`, and `internal/spool`.
 
+The configurable summarization adapter lives in `internal/summarizer`.
+
 Index adapters live in `internal/indexer` and `internal/zvecindex`.
 
 ## Design Principles
@@ -47,8 +49,10 @@ Do not add migration code from a private memory system. Public contributors shou
 
 Prefer local behavior over hosted services. External dependencies should be optional unless they are core to retrieval.
 
+Daemon producers should not store raw transcripts, tool logs, diffs, or git output as memory bodies. Pass source material to the summarizer and store only distilled memories with `source` and `More detail:` references.
+
 ## Documentation
 
-Update `README.md` and the relevant file in `docs/` when changing commands, config fields, managed resources, MCP tools, ingestion behavior, or zvec setup.
+Update `README.md` and the relevant file in `docs/` when changing commands, config fields, managed resources, MCP tools, ingestion behavior, summarizer behavior, or zvec setup.
 
 Docs should describe current behavior plainly. If something is a future direction, mark it as such or leave it out.

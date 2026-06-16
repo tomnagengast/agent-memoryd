@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
+	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
 type GitEvent struct {
@@ -43,7 +44,7 @@ func EnqueueGit(dir string, event GitEvent) (string, error) {
 	return path, os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-func ProcessGit(ctx context.Context, dir string, store *memory.Store) (int, error) {
+func ProcessGit(ctx context.Context, dir string, store *memory.Store, agent summarizer.Agent, contextLimit int) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -65,7 +66,7 @@ func ProcessGit(ctx context.Context, dir string, store *memory.Store) (int, erro
 		if err := json.Unmarshal(data, &event); err != nil {
 			return processed, fmt.Errorf("decode git event %s: %w", path, err)
 		}
-		if err := addGitMemory(ctx, store, event); err != nil {
+		if err := addGitMemory(ctx, store, event, agent, contextLimit); err != nil {
 			return processed, err
 		}
 		if err := os.Remove(path); err != nil {
@@ -76,22 +77,56 @@ func ProcessGit(ctx context.Context, dir string, store *memory.Store) (int, erro
 	return processed, nil
 }
 
-func addGitMemory(ctx context.Context, store *memory.Store, event GitEvent) error {
-	summary, body := summarizeCommit(ctx, event)
-	id := "git:" + stableID(event.Repo+"@"+event.SHA)
-	_, err := store.Add(ctx, memory.AddRequest{
-		ID:      id,
-		Kind:    "git-summary",
-		Project: filepath.Base(event.Repo),
-		Source:  event.Repo + "@" + event.SHA,
-		Summary: summary,
-		Body:    body,
-		Now:     event.CreatedAt,
+func addGitMemory(ctx context.Context, store *memory.Store, event GitEvent, agent summarizer.Agent, contextLimit int) error {
+	if agent == nil {
+		return fmt.Errorf("git summarizer is not configured")
+	}
+	project := filepath.Base(event.Repo)
+	sha := strings.TrimSpace(event.SHA)
+	if sha == "" {
+		sha = "HEAD"
+	}
+	commitText := summarizeCommit(ctx, event)
+	existing, err := summarizer.ExistingMemoryRefs(ctx, store, project, contextLimit)
+	if err != nil {
+		return err
+	}
+	source := event.Repo + "@" + sha
+	detailReference := "Commit: " + sha + "\nRepo: " + event.Repo
+	result, err := agent.Summarize(ctx, summarizer.Request{
+		Producer:         "git",
+		Project:          project,
+		Source:           source,
+		DetailReference:  detailReference,
+		SourceMaterial:   commitSummarizerInput(event, sha, commitText),
+		ExistingMemories: existing,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	id := "git:" + stableID(source)
+	for i, item := range result.Memories {
+		kind := item.Kind
+		if kind == "" {
+			kind = "git-summary"
+		}
+		body := summarizer.EnsureDetailReference(item.Body, detailReference)
+		if _, err := store.Add(ctx, memory.AddRequest{
+			ID:      fmt.Sprintf("%s:%02d", id, i),
+			Kind:    kind,
+			Project: project,
+			Source:  source,
+			Summary: item.Summary,
+			Body:    body,
+			Now:     event.CreatedAt,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func summarizeCommit(ctx context.Context, event GitEvent) (string, string) {
+func summarizeCommit(ctx context.Context, event GitEvent) string {
 	sha := strings.TrimSpace(event.SHA)
 	if sha == "" {
 		sha = "HEAD"
@@ -99,14 +134,18 @@ func summarizeCommit(ctx context.Context, event GitEvent) (string, string) {
 	cmd := exec.CommandContext(ctx, "git", "-C", event.Repo, "show", "--stat", "--format=%h %s%n%n%b", "--no-ext-diff", sha)
 	out, err := cmd.Output()
 	if err != nil {
-		return "Git update in " + filepath.Base(event.Repo), fmt.Sprintf("Repo: %s\nCommit: %s\n", event.Repo, sha)
+		return fmt.Sprintf("Repo: %s\nCommit: %s\n", event.Repo, sha)
 	}
-	text := strings.TrimSpace(string(out))
-	first := strings.Split(text, "\n")[0]
-	if first == "" {
-		first = "Git update in " + filepath.Base(event.Repo)
-	}
-	return first, text
+	return strings.TrimSpace(string(out))
+}
+
+func commitSummarizerInput(event GitEvent, sha string, commitText string) string {
+	return fmt.Sprintf("Repo: %s\nCommit: %s\nCreated at: %s\n\nGit summary:\n%s\n",
+		event.Repo,
+		sha,
+		event.CreatedAt.UTC().Format(time.RFC3339),
+		commitText,
+	)
 }
 
 func randomName(prefix, suffix string) (string, error) {

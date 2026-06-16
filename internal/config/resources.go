@@ -164,14 +164,17 @@ func writeDefaultTo(path string, cfg Config) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	body := map[string]any{
-		"root":             cfg.Root,
-		"store_path":       cfg.StorePath,
-		"index_backend":    cfg.IndexBackend,
-		"zvec_path":        cfg.ZvecPath,
-		"spool_dir":        cfg.SpoolDir,
-		"transcript_roots": cfg.TranscriptRoots,
-		"poll_interval":    cfg.PollInterval.String(),
-		"idle_after":       cfg.IdleAfter.String(),
+		"root":                 cfg.Root,
+		"store_path":           cfg.StorePath,
+		"index_backend":        cfg.IndexBackend,
+		"zvec_path":            cfg.ZvecPath,
+		"spool_dir":            cfg.SpoolDir,
+		"transcript_roots":     cfg.TranscriptRoots,
+		"summarizer_command":   cfg.SummarizerCommand,
+		"summarizer_timeout":   cfg.SummarizerTimeout.String(),
+		"memory_context_limit": cfg.MemoryContextLimit,
+		"poll_interval":        cfg.PollInterval.String(),
+		"idle_after":           cfg.IdleAfter.String(),
 	}
 	data, err := json.MarshalIndent(body, "", "  ")
 	if err != nil {

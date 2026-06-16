@@ -40,8 +40,7 @@ Output:
       "project": "optional-project",
       "source": "optional-source",
       "summary": "short summary",
-      "score": 1.25,
-      "updated_at": "2026-06-16T12:00:00Z"
+      "score": 1.25
     }
   ]
 }
@@ -67,8 +66,12 @@ Output:
   "memory": {
     "id": "memory-id",
     "kind": "fact",
+    "project": "optional-project",
+    "source": "optional-source",
     "summary": "short summary",
-    "body": "full memory body"
+    "body": "full memory body",
+    "created_at": "2026-06-16T12:00:00Z",
+    "updated_at": "2026-06-16T12:00:00Z"
   }
 }
 ```
@@ -77,7 +80,7 @@ If no memory exists, `found` is `false`.
 
 ### add
 
-Create or update a durable local memory.
+Create or update a durable local memory. Direct `add` stores the supplied body verbatim; summarization is only used by daemon producers.
 
 Input:
 

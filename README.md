@@ -26,6 +26,8 @@ Run the resident ingest worker:
 ./agent-memoryd daemon
 ```
 
+Daemon transcript and git producers require a configured `summarizer_command`. The default uses `codex exec` in read-only ephemeral mode.
+
 Add and retrieve a memory from the CLI:
 
 ```sh
@@ -39,7 +41,7 @@ Add and retrieve a memory from the CLI:
 - Local-first memory store for coding agents
 - MCP tools for `search`, `get`, `add`, and `forget`
 - Agent-managed memories without burning the agent's main turn on note writing
-- Optional git-history summarization through thin hook events
+- Summarizer-driven transcript and git producers that store distilled memories with source pointers
 - Rebuildable source records with zvec-backed retrieval
 
 ## Non-Goals
@@ -112,7 +114,7 @@ mise run build-zvec
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
 - Retrieval: MCP tools and CLI commands share the same store.
 
-The daemon polls configured transcript roots, waits until a transcript is idle, then creates or updates a `session` memory. Git hooks do not summarize inline; they enqueue a small event file, and the daemon turns that into a `git-summary` memory out of band.
+The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. These producers store distilled memories with transcript or commit references, not raw logs.
 
 `agent-memoryd init` writes a resource manifest to the data root. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
 

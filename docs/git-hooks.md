@@ -37,7 +37,7 @@ agent-memoryd enqueue-git \
   --sha "$(git rev-parse HEAD)"
 ```
 
-The daemon converts queued events into `git-summary` memories.
+The daemon reads queued events, runs `git show`, and passes that output to the configured summarizer. Stored memories are distilled notes with `repo@sha` source references, not raw hook output.
 
 ## Scope
 

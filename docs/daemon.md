@@ -21,9 +21,9 @@ The daemon scans each configured `transcript_roots` entry for `.jsonl` files. By
 ~/.codex/sessions
 ```
 
-A transcript must be unchanged for `idle_after` before it is indexed. The daemon extracts a compact session memory with the transcript path, working directory, modified time, assistant turn count, tool call count, first user prompt, and last user prompt.
+A transcript must be unchanged for `idle_after` before it is indexed. The daemon reads the transcript and passes it, transcript metadata, and existing memory summaries to the configured `summarizer_command`. The raw transcript is not stored as the memory body.
 
-Transcript memories use kind `session`.
+The summarizer returns zero or more distilled memories. Those memories should capture durable information learned during the session, such as user preferences, standing instructions, project decisions, or follow-up context. Stored memories include the transcript path in `source` and a `More detail: Transcript: ...` reference in the body for progressive disclosure.
 
 ## Git Event Ingestion
 
@@ -35,7 +35,19 @@ Git hooks should not summarize commits inline. They enqueue a small event file w
   --sha "$(git rev-parse HEAD)"
 ```
 
-The daemon later reads the event, runs `git show --stat`, stores a `git-summary` memory, and removes the event file.
+The daemon later reads the event, runs `git show --stat`, and passes that git summary plus existing memory summaries to the same configured summarizer. The raw git output is not stored as the memory body.
+
+The summarizer returns zero or more distilled memories. Stored git memories include `repo@sha` in `source` and a `More detail:` reference with the commit and local repository path for progressive disclosure. The event file is removed after the event is successfully processed.
+
+## Summarizer Command
+
+The default summarizer command is:
+
+```json
+["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "-"]
+```
+
+You can replace `summarizer_command` in `config.json` with another local agent command. It must read the prompt from stdin and return JSON with a top-level `memories` array.
 
 ## launchd
 
@@ -57,4 +69,4 @@ $AGENT_MEMORYD_HOME/logs
 
 ## Privacy
 
-Transcript ingestion is local, but it may store prompts and transcript metadata from the configured roots. Review `transcript_roots` before running a resident daemon on directories that contain sensitive sessions.
+Transcript and git ingestion are local, but the configured summarizer receives raw source material on stdin. Review `summarizer_command`, `transcript_roots`, and git hook installation before running a resident daemon on sensitive projects.

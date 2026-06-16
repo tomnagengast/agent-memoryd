@@ -9,6 +9,7 @@ import (
 	"github.com/tomnagengast/agent-memoryd/internal/ingest"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/spool"
+	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
 type Daemon struct {
@@ -42,13 +43,19 @@ func (d Daemon) Run(ctx context.Context) error {
 }
 
 func (d Daemon) Once(ctx context.Context) error {
-	gitEvents, err := spool.ProcessGit(ctx, d.Config.SpoolDir, d.Store)
+	agent := summarizer.CommandAgent{
+		Command: d.Config.SummarizerCommand,
+		Timeout: d.Config.SummarizerTimeout,
+	}
+	gitEvents, err := spool.ProcessGit(ctx, d.Config.SpoolDir, d.Store, agent, d.Config.MemoryContextLimit)
 	if err != nil {
 		return err
 	}
 	scanner := ingest.Scanner{
-		Roots:     d.Config.TranscriptRoots,
-		IdleAfter: d.Config.IdleAfter,
+		Roots:              d.Config.TranscriptRoots,
+		IdleAfter:          d.Config.IdleAfter,
+		Summarizer:         agent,
+		MemoryContextLimit: d.Config.MemoryContextLimit,
 	}
 	sessions, err := scanner.Scan(ctx, d.Store)
 	if err != nil {

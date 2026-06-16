@@ -10,14 +10,46 @@ import (
 )
 
 type Config struct {
-	Root            string        `json:"root"`
-	StorePath       string        `json:"store_path"`
-	IndexBackend    string        `json:"index_backend"`
-	ZvecPath        string        `json:"zvec_path"`
-	SpoolDir        string        `json:"spool_dir"`
-	TranscriptRoots []string      `json:"transcript_roots"`
-	PollInterval    time.Duration `json:"poll_interval"`
-	IdleAfter       time.Duration `json:"idle_after"`
+	Root               string        `json:"root"`
+	StorePath          string        `json:"store_path"`
+	IndexBackend       string        `json:"index_backend"`
+	ZvecPath           string        `json:"zvec_path"`
+	SpoolDir           string        `json:"spool_dir"`
+	TranscriptRoots    []string      `json:"transcript_roots"`
+	SummarizerCommand  []string      `json:"summarizer_command"`
+	SummarizerTimeout  time.Duration `json:"summarizer_timeout"`
+	MemoryContextLimit int           `json:"memory_context_limit"`
+	PollInterval       time.Duration `json:"poll_interval"`
+	IdleAfter          time.Duration `json:"idle_after"`
+}
+
+func (c Config) MarshalJSON() ([]byte, error) {
+	type diskConfig struct {
+		Root               string   `json:"root"`
+		StorePath          string   `json:"store_path"`
+		IndexBackend       string   `json:"index_backend"`
+		ZvecPath           string   `json:"zvec_path"`
+		SpoolDir           string   `json:"spool_dir"`
+		TranscriptRoots    []string `json:"transcript_roots"`
+		SummarizerCommand  []string `json:"summarizer_command"`
+		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		MemoryContextLimit int      `json:"memory_context_limit"`
+		PollInterval       string   `json:"poll_interval"`
+		IdleAfter          string   `json:"idle_after"`
+	}
+	return json.Marshal(diskConfig{
+		Root:               c.Root,
+		StorePath:          c.StorePath,
+		IndexBackend:       c.IndexBackend,
+		ZvecPath:           c.ZvecPath,
+		SpoolDir:           c.SpoolDir,
+		TranscriptRoots:    c.TranscriptRoots,
+		SummarizerCommand:  c.SummarizerCommand,
+		SummarizerTimeout:  c.SummarizerTimeout.String(),
+		MemoryContextLimit: c.MemoryContextLimit,
+		PollInterval:       c.PollInterval.String(),
+		IdleAfter:          c.IdleAfter.String(),
+	})
 }
 
 func Default() Config {
@@ -32,8 +64,19 @@ func Default() Config {
 			filepath.Join(homeDir(), ".claude", "projects"),
 			filepath.Join(homeDir(), ".codex", "sessions"),
 		},
-		PollInterval: 10 * time.Second,
-		IdleAfter:    2 * time.Minute,
+		SummarizerCommand: []string{
+			"codex",
+			"exec",
+			"--sandbox",
+			"read-only",
+			"--skip-git-repo-check",
+			"--ephemeral",
+			"-",
+		},
+		SummarizerTimeout:  5 * time.Minute,
+		MemoryContextLimit: 12,
+		PollInterval:       10 * time.Second,
+		IdleAfter:          2 * time.Minute,
 	}
 }
 
@@ -48,14 +91,17 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
 	var disk struct {
-		Root            string   `json:"root"`
-		StorePath       string   `json:"store_path"`
-		IndexBackend    string   `json:"index_backend"`
-		ZvecPath        string   `json:"zvec_path"`
-		SpoolDir        string   `json:"spool_dir"`
-		TranscriptRoots []string `json:"transcript_roots"`
-		PollInterval    string   `json:"poll_interval"`
-		IdleAfter       string   `json:"idle_after"`
+		Root               string   `json:"root"`
+		StorePath          string   `json:"store_path"`
+		IndexBackend       string   `json:"index_backend"`
+		ZvecPath           string   `json:"zvec_path"`
+		SpoolDir           string   `json:"spool_dir"`
+		TranscriptRoots    []string `json:"transcript_roots"`
+		SummarizerCommand  []string `json:"summarizer_command"`
+		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		MemoryContextLimit int      `json:"memory_context_limit"`
+		PollInterval       string   `json:"poll_interval"`
+		IdleAfter          string   `json:"idle_after"`
 	}
 	if err := json.Unmarshal(data, &disk); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
@@ -80,6 +126,19 @@ func Load() (Config, error) {
 		for _, root := range disk.TranscriptRoots {
 			cfg.TranscriptRoots = append(cfg.TranscriptRoots, expand(root))
 		}
+	}
+	if disk.SummarizerCommand != nil {
+		cfg.SummarizerCommand = append([]string(nil), disk.SummarizerCommand...)
+	}
+	if disk.SummarizerTimeout != "" {
+		d, err := time.ParseDuration(disk.SummarizerTimeout)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse summarizer_timeout: %w", err)
+		}
+		cfg.SummarizerTimeout = d
+	}
+	if disk.MemoryContextLimit > 0 {
+		cfg.MemoryContextLimit = disk.MemoryContextLimit
 	}
 	if disk.PollInterval != "" {
 		d, err := time.ParseDuration(disk.PollInterval)

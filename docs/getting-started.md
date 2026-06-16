@@ -72,10 +72,12 @@ The daemon polls configured transcript roots and the git event spool:
 ./agent-memoryd daemon
 ```
 
+The default daemon summarizer uses `codex exec`. Edit `summarizer_command` in `config.json` if you want another local summarization agent.
+
 For a one-shot ingest pass:
 
 ```sh
 ./agent-memoryd scan-once
 ```
 
-The daemon waits until transcript files are idle before indexing them. See [daemon.md](./daemon.md) for ingestion details.
+The daemon waits until transcript files are idle before passing them to the summarizer. See [daemon.md](./daemon.md) for ingestion details.
