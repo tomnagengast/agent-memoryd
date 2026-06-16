@@ -8,8 +8,13 @@ wheels/
 
 # Tool and editor state
 .archive/
-.claude/
-.codex/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/*.py
+.codex/*
+!.codex/config.toml
+.mcp.json
 .venv
 lib/
 plans/
