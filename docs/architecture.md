@@ -24,11 +24,11 @@ Deletion uses `forget`. The record is removed from the source store and the deri
 
 ## Lifecycle Flow
 
-`init` creates the managed data root and records the resources it owns in `resources.json`. On macOS it also writes the standard LaunchAgent plist, bootstraps it with launchd, and kickstarts the daemon. `init --no-daemon` skips that service setup.
+`init` creates the managed data root and records the resources it owns in `resources.json`. On a new interactive install it asks whether to start fresh or import existing memories. Scripted installs can use `--fresh` or `--import <path>`. After memory setup, `init` writes managed global Git hooks and sets global `core.hooksPath` when that value is unset or already points at the managed hook directory. On macOS it also writes the standard LaunchAgent plist, bootstraps it with launchd, and kickstarts the daemon. `init --no-daemon` skips only that service setup.
 
-`status` reads the manifest and reports command help, MCP tool help, config, store status, and whether every managed path exists.
+`status` reads the manifest and reports command help, MCP tool help, config, store status, Git hook status, and whether every managed path exists.
 
-`uninstall --yes` uses the manifest to remove the managed data root and the standard macOS LaunchAgent plist path if present.
+`uninstall --yes` uses the manifest to remove the managed data root and the standard macOS LaunchAgent plist path if present. It also unsets global `core.hooksPath` when that setting points at the managed hook directory.
 
 ## Current Boundaries
 

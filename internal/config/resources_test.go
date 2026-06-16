@@ -32,6 +32,15 @@ func TestInitPersistsManagedResources(t *testing.T) {
 	if len(manifest.Resources) == 0 {
 		t.Fatal("expected manifest resources")
 	}
+	foundGitHooks := false
+	for _, resource := range manifest.Resources {
+		if resource.Name == "global git hooks" && resource.Path == ManagedGitHooksPath(cfg.Root) {
+			foundGitHooks = true
+		}
+	}
+	if !foundGitHooks {
+		t.Fatalf("manifest resources missing managed git hooks: %#v", manifest.Resources)
+	}
 }
 
 func TestUninstallRemovesManagedRoot(t *testing.T) {

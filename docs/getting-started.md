@@ -12,9 +12,11 @@ mise run build
 ./agent-memoryd status
 ```
 
-On macOS, `init` installs and starts the managed launchd daemon. The daemon begins polling the configured transcript roots and git event spool immediately. Use `./agent-memoryd init --no-daemon` to create files without starting the background service.
+In an interactive terminal, `init` asks whether to start fresh or import existing memories. For non-interactive installs, use `./agent-memoryd init --fresh` to skip import prompts or `./agent-memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
 
-`status` prints JSON with command help, MCP tool help, the loaded config, store status, launchd service status, and every resource tracked by the `init` manifest.
+`init` installs managed global Git hooks when no other global hook path is configured. On macOS, it also installs and starts the managed launchd daemon. The daemon begins polling the configured transcript roots and git event spool immediately. Use `./agent-memoryd init --no-daemon` to create files and Git hooks without starting the background service.
+
+`status` prints JSON with command help, MCP tool help, the loaded config, store status, launchd service status, Git hook status, and every resource tracked by the `init` manifest.
 
 ## Try The CLI
 

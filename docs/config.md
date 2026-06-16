@@ -53,7 +53,7 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `zvec_path` is the on-disk zvec index directory.
 
-`spool_dir` holds queued git events. Git hooks write small JSON files here, and the daemon passes each event's `git show` output to the summarizer.
+`spool_dir` holds queued git events. The managed global Git hooks write small JSON files here, and the daemon passes each event's `git show` output to the summarizer.
 
 `transcript_roots` lists directories to scan for idle `.jsonl` agent transcripts. The defaults cover Claude project transcripts and Codex sessions. The daemon only ingests transcript files modified after `init` wrote the resource manifest. Remove or narrow these paths if you do not want transcript ingestion.
 
@@ -67,6 +67,12 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `idle_after` controls how long a transcript must be unchanged before it is indexed.
 
+## Import
+
+`init` can start fresh or import existing memories before the daemon starts. In an interactive terminal it prompts for that choice. In scripts, use `--fresh` or `--import <path>`.
+
+`--import` accepts an agent-memoryd JSONL file, a markdown file, a text file, or a directory containing markdown/text files. Use `--import-project <name>` to assign a project to imported markdown and text records. JSONL imports preserve each record's existing project.
+
 ## Resource Manifest
 
-`init` writes `resources.json` so later lifecycle commands can show and remove the resources `agent-memoryd` owns. `status` reports each resource with an `exists` flag.
+`init` writes `resources.json` so later lifecycle commands can show and remove the resources `agent-memoryd` owns. `status` reports each resource with an `exists` flag. The manifest includes the managed global Git hooks directory and hook files.

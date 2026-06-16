@@ -50,15 +50,27 @@ Release builds can set `AGENT_MEMORYD_VERSION`, usually to a semver tag such as 
 
 ## Initialize
 
-Create the local data root, default config, memory store, git spool, logs directory, resource manifest, and managed daemon service:
+Create the local data root, default config, memory store, git spool, managed global Git hooks, logs directory, resource manifest, and managed daemon service:
 
 ```sh
 ./agent-memoryd init
 ```
 
+In an interactive terminal, `init` asks whether to start fresh or import existing memories. Non-interactive installs should pass one of these flags:
+
+```sh
+./agent-memoryd init --fresh
+./agent-memoryd init --import ~/notes/agent
+./agent-memoryd init --import ~/.local/share/agent-memoryd/memories.jsonl
+```
+
+The import path may be an agent-memoryd JSONL store, a markdown file, a text file, or a directory containing markdown/text files. JSONL records keep their existing ids, kinds, projects, sources, summaries, and bodies. Markdown and text imports become `note` records with stable `import:<hash>` ids and source paths, so running the same import again updates the same records instead of duplicating them.
+
+`init` writes executable hooks under `~/.local/share/agent-memoryd/git-hooks` and sets `git config --global core.hooksPath` to that directory when the global value is unset or already points at the managed directory. If another global hook path is already configured, `init` leaves it alone and reports that in `git_hooks`.
+
 On macOS, `init` writes `~/Library/LaunchAgents/dev.agent-memoryd.plist`, bootstraps it with launchd, and kickstarts `agent-memoryd daemon`. On other platforms, launchd setup is skipped.
 
-Use `--no-daemon` if you only want to create the local files:
+Use `--no-daemon` if you only want to create the local files and Git hooks without starting the daemon service:
 
 ```sh
 ./agent-memoryd init --no-daemon

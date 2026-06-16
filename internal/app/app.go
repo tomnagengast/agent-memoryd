@@ -12,9 +12,12 @@ import (
 	"strings"
 	"syscall"
 
+	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 	"github.com/tomnagengast/agent-memoryd/internal/config"
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
+	"github.com/tomnagengast/agent-memoryd/internal/githooks"
+	"github.com/tomnagengast/agent-memoryd/internal/importmem"
 	"github.com/tomnagengast/agent-memoryd/internal/indexer"
 	"github.com/tomnagengast/agent-memoryd/internal/launchd"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
@@ -82,21 +85,44 @@ func newRootCommand() *cobra.Command {
 func newInitCommand() *cobra.Command {
 	var path string
 	var noDaemon bool
+	var fresh bool
+	var importPath string
+	var importProject string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create config, data directories, memory store, resource manifest, and daemon service.",
+		Short: "Create config, choose memory import mode, install hooks, and start the daemon.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if fresh && importPath != "" {
+				return fmt.Errorf("--fresh and --import cannot be used together")
+			}
 			cfg, manifest, err := config.Init(path)
+			if err != nil {
+				return err
+			}
+			store := memory.NewStore(cfg.StorePath)
+			memoryImport, err := runInitMemoryImport(cmd.Context(), store, initMemoryImportOptions{
+				Fresh:         fresh,
+				ImportPath:    importPath,
+				ImportProject: importProject,
+			})
+			if err != nil {
+				return err
+			}
+			exe, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			gitHooks, err := githooks.InstallManaged(cfg, exe)
+			if err != nil {
+				return err
+			}
+			manifest, err = config.LoadManifest(cfg.Root)
 			if err != nil {
 				return err
 			}
 			var service any = map[string]any{"started": false, "skipped": "disabled by --no-daemon"}
 			if !noDaemon {
-				exe, err := os.Executable()
-				if err != nil {
-					return err
-				}
 				status, err := launchd.InstallAndStart(launchd.Config{
 					Label:     "dev.agent-memoryd",
 					Binary:    exe,
@@ -118,16 +144,21 @@ func newInitCommand() *cobra.Command {
 				out = path
 			}
 			return printJSON(map[string]any{
-				"ok":        true,
-				"config":    out,
-				"manifest":  config.ManifestPath(cfg.Root),
-				"resources": manifest.Resources,
-				"service":   service,
+				"ok":            true,
+				"config":        out,
+				"manifest":      config.ManifestPath(cfg.Root),
+				"resources":     manifest.Resources,
+				"service":       service,
+				"git_hooks":     gitHooks,
+				"memory_import": memoryImport,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&path, "path", "", "config path")
 	cmd.Flags().BoolVar(&noDaemon, "no-daemon", false, "do not install or start the launchd daemon")
+	cmd.Flags().BoolVar(&fresh, "fresh", false, "start with an empty memory store and do not prompt for imports")
+	cmd.Flags().StringVar(&importPath, "import", "", "import existing memories from a JSONL file or markdown/text directory")
+	cmd.Flags().StringVar(&importProject, "import-project", "", "project scope for imported markdown/text memories")
 	return cmd
 }
 
@@ -423,6 +454,7 @@ func runStatus(ctx context.Context, cfg config.Config) error {
 			Label:     "dev.agent-memoryd",
 			PlistPath: config.LaunchdPlistPath(),
 		}),
+		"git_hooks": githooks.CurrentStatus(cfg),
 		"resources": manifest.Resources,
 	})
 }
@@ -442,10 +474,128 @@ func runUninstall(cfg config.Config, yes bool) error {
 			"configured": cfg.Root,
 		})
 	}
+	if err := githooks.UninstallManaged(cfg); err != nil {
+		return err
+	}
 	if err := config.Uninstall(cfg, manifest); err != nil {
 		return err
 	}
 	return printJSON(map[string]any{"ok": true, "removed_root": cfg.Root})
+}
+
+type initMemoryImportOptions struct {
+	Fresh         bool
+	ImportPath    string
+	ImportProject string
+}
+
+type initMemoryImportStatus struct {
+	Mode     string            `json:"mode"`
+	Result   *importmem.Result `json:"result,omitempty"`
+	Skipped  string            `json:"skipped,omitempty"`
+	Existing int               `json:"existing,omitempty"`
+}
+
+func runInitMemoryImport(ctx context.Context, store *memory.Store, opts initMemoryImportOptions) (initMemoryImportStatus, error) {
+	if opts.ImportPath != "" {
+		result, err := importmem.Import(ctx, store, importmem.Options{Path: opts.ImportPath, Project: opts.ImportProject})
+		if err != nil {
+			return initMemoryImportStatus{}, err
+		}
+		return initMemoryImportStatus{Mode: "import", Result: &result}, nil
+	}
+	status, err := store.Status(ctx)
+	if err != nil {
+		return initMemoryImportStatus{}, err
+	}
+	if opts.Fresh {
+		return initMemoryImportStatus{Mode: "fresh", Existing: status.MemoryCount}, nil
+	}
+	if status.MemoryCount > 0 {
+		return initMemoryImportStatus{Mode: "existing-store", Existing: status.MemoryCount, Skipped: "memory store already has records"}, nil
+	}
+	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
+		return initMemoryImportStatus{Mode: "fresh", Skipped: "non-interactive default"}, nil
+	}
+	choice, err := promptMemoryImport()
+	if err != nil {
+		return initMemoryImportStatus{}, err
+	}
+	if choice.ImportPath == "" {
+		return initMemoryImportStatus{Mode: "fresh"}, nil
+	}
+	result, err := importmem.Import(ctx, store, importmem.Options{Path: choice.ImportPath, Project: choice.ImportProject})
+	if err != nil {
+		return initMemoryImportStatus{}, err
+	}
+	return initMemoryImportStatus{Mode: "import", Result: &result}, nil
+}
+
+type memoryImportChoice struct {
+	ImportPath    string
+	ImportProject string
+}
+
+func promptMemoryImport() (memoryImportChoice, error) {
+	mode := "fresh"
+	if err := huh.NewSelect[string]().
+		Title("Memory setup").
+		Options(
+			huh.NewOption("Start fresh", "fresh"),
+			huh.NewOption("Import existing memories", "import"),
+		).
+		Value(&mode).
+		Run(); err != nil {
+		return memoryImportChoice{}, err
+	}
+	if mode != "import" {
+		return memoryImportChoice{}, nil
+	}
+	var choice memoryImportChoice
+	if err := huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("Import path").
+			Description("JSONL file, markdown file, text file, or directory").
+			Placeholder("~/notes/agent").
+			Value(&choice.ImportPath).
+			Validate(func(value string) error {
+				value = strings.TrimSpace(value)
+				if value == "" {
+					return fmt.Errorf("path is required")
+				}
+				if _, err := os.Stat(expandPath(value)); err != nil {
+					return err
+				}
+				return nil
+			}),
+		huh.NewInput().
+			Title("Project for text memories").
+			Description("Optional; JSONL records keep their own project values").
+			Value(&choice.ImportProject),
+	)).Run(); err != nil {
+		return memoryImportChoice{}, err
+	}
+	choice.ImportPath = strings.TrimSpace(choice.ImportPath)
+	choice.ImportProject = strings.TrimSpace(choice.ImportProject)
+	return choice, nil
+}
+
+func isTerminal(file *os.File) bool {
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return os.ExpandEnv(path)
 }
 
 func runDaemon(cfg config.Config, store *memory.Store) error {
@@ -490,7 +640,7 @@ type helpItem struct {
 }
 
 var commandHelp = []helpItem{
-	{Name: "init", Summary: "create config, data directories, memory store, and resource manifest"},
+	{Name: "init", Summary: "create config, choose memory import mode, install hooks, and start the daemon"},
 	{Name: "status", Summary: "show help, config, store status, and managed resources"},
 	{Name: "uninstall --yes", Summary: "remove managed agent-memoryd resources"},
 	{Name: "help [command]", Summary: "show command help"},
