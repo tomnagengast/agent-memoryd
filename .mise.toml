@@ -1,0 +1,18 @@
+[tools]
+go = "1.26.3"
+
+[tasks.fmt]
+description = "Format Go source"
+run = "gofmt -w ."
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test ./..."
+
+[tasks.build]
+description = "Build the agent-memoryd binary"
+run = "go build ./cmd/agent-memoryd"
+
+[tasks.tidy]
+description = "Tidy Go modules"
+run = "go mod tidy"
