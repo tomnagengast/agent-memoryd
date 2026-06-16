@@ -20,6 +20,7 @@ import (
 type Scanner struct {
 	Roots              []string
 	IdleAfter          time.Duration
+	NotBefore          time.Time
 	Summarizer         summarizer.Agent
 	MemoryContextLimit int
 }
@@ -42,6 +43,9 @@ func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
 				return nil
 			}
 			if s.IdleAfter > 0 && time.Since(info.ModTime()) < s.IdleAfter {
+				return nil
+			}
+			if !s.NotBefore.IsZero() && info.ModTime().Before(s.NotBefore) {
 				return nil
 			}
 			transcript, err := parseTranscript(path, info)

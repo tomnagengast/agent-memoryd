@@ -3,6 +3,7 @@ package summarizer
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,5 +65,31 @@ func TestExistingMemoryRefsReturnsRecentProjectScopedSummaries(t *testing.T) {
 	}
 	if len(refs) != 1 || refs[0].ID != "new" || refs[0].Summary != "new summary" {
 		t.Fatalf("refs = %#v, want newest project-scoped memory", refs)
+	}
+}
+
+func TestCommandAgentRedactsSubprocessOutputOnFailure(t *testing.T) {
+	t.Parallel()
+	agent := CommandAgent{
+		Command: []string{"sh", "-c", "cat >/dev/null; printf 'raw transcript secret' >&2; exit 7"},
+	}
+
+	_, err := agent.Summarize(context.Background(), Request{
+		Producer:       "transcript",
+		Project:        "agent-memoryd",
+		Source:         "source",
+		SourceMaterial: "raw source secret",
+	})
+	if err == nil {
+		t.Fatal("Summarize returned nil error")
+	}
+	text := err.Error()
+	for _, leaked := range []string{"raw transcript secret", "raw source secret"} {
+		if strings.Contains(text, leaked) {
+			t.Fatalf("error leaked %q: %v", leaked, err)
+		}
+	}
+	if !strings.Contains(text, "subprocess output redacted") {
+		t.Fatalf("error missing redaction marker: %v", err)
 	}
 }

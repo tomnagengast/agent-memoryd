@@ -92,3 +92,37 @@ func TestScannerStoresSummarizedTranscriptMemoryWithSourceReference(t *testing.T
 		t.Fatalf("stored body missing transcript reference: %q", got.Body)
 	}
 }
+
+func TestScannerSkipsTranscriptsOlderThanCutoff(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	transcript := filepath.Join(root, "old.jsonl")
+	data := `{"cwd":"/tmp/agent-memoryd","message":{"role":"user","content":"old prompt"}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(data), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	modTime := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(transcript, modTime, modTime); err != nil {
+		t.Fatalf("chtime transcript: %v", err)
+	}
+
+	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	fake := &fakeTranscriptSummarizer{}
+	scanner := Scanner{
+		Roots:      []string{root},
+		NotBefore:  modTime.Add(time.Second),
+		Summarizer: fake,
+	}
+
+	count, err := scanner.Scan(ctx, store)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("count = %d, want 0", count)
+	}
+	if fake.req.Producer != "" {
+		t.Fatalf("summarizer was called for old transcript: %#v", fake.req)
+	}
+}

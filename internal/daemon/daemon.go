@@ -54,6 +54,7 @@ func (d Daemon) Once(ctx context.Context) error {
 	scanner := ingest.Scanner{
 		Roots:              d.Config.TranscriptRoots,
 		IdleAfter:          d.Config.IdleAfter,
+		NotBefore:          d.transcriptNotBefore(),
 		Summarizer:         agent,
 		MemoryContextLimit: d.Config.MemoryContextLimit,
 	}
@@ -65,4 +66,12 @@ func (d Daemon) Once(ctx context.Context) error {
 		d.Log.Info("processed memory inputs", "git_events", gitEvents, "sessions", sessions)
 	}
 	return nil
+}
+
+func (d Daemon) transcriptNotBefore() time.Time {
+	manifest, err := config.LoadManifest(d.Config.Root)
+	if err != nil {
+		return time.Time{}
+	}
+	return manifest.CreatedAt
 }

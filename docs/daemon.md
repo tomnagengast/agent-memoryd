@@ -25,7 +25,7 @@ The daemon scans each configured `transcript_roots` entry for `.jsonl` files. By
 ~/.codex/sessions
 ```
 
-A transcript must be unchanged for `idle_after` before it is indexed. The daemon reads the transcript and passes it, transcript metadata, and existing memory summaries to the configured `summarizer_command`. The raw transcript is not stored as the memory body.
+A transcript must be unchanged for `idle_after` before it is indexed. The daemon also skips transcript files whose modification time is older than the `resources.json` manifest creation time, so a fresh `init` does not backfill old agent history. The daemon reads eligible transcripts and passes transcript metadata, raw transcript content, and existing memory summaries to the configured `summarizer_command`. The raw transcript is not stored as the memory body.
 
 The summarizer returns zero or more distilled memories. Those memories should capture durable information learned during the session, such as user preferences, standing instructions, project decisions, or follow-up context. Stored memories include the transcript path in `source` and a `More detail: Transcript: ...` reference in the body for progressive disclosure.
 
@@ -54,6 +54,8 @@ The default summarizer command is:
 ```
 
 You can replace `summarizer_command` in `config.json` with another local agent command. It must read the prompt from stdin and return JSON with a top-level `memories` array.
+
+If the summarizer command fails, daemon logs include the command failure and output byte counts, but subprocess stdout and stderr are redacted because they may contain raw transcript or git source material.
 
 ## launchd
 

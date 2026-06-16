@@ -55,7 +55,7 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `spool_dir` holds queued git events. Git hooks write small JSON files here, and the daemon passes each event's `git show` output to the summarizer.
 
-`transcript_roots` lists directories to scan for idle `.jsonl` agent transcripts. The defaults cover Claude project transcripts and Codex sessions. Remove or narrow these paths if you do not want transcript ingestion.
+`transcript_roots` lists directories to scan for idle `.jsonl` agent transcripts. The defaults cover Claude project transcripts and Codex sessions. The daemon only ingests transcript files modified after `init` wrote the resource manifest. Remove or narrow these paths if you do not want transcript ingestion.
 
 `summarizer_command` is the external command used by daemon producers to distill transcripts and git summaries into durable memories. The command receives a prompt on stdin and must return JSON shaped like `{"memories":[{"kind":"preference","summary":"short summary","body":"concise durable memory"}]}`. The default command uses `codex exec` in read-only ephemeral mode. Set this to another command if you want a different local summarization agent.
 

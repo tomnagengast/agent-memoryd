@@ -69,14 +69,7 @@ func (a CommandAgent) Summarize(ctx context.Context, req Request) (Result, error
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = strings.TrimSpace(stdout.String())
-		}
-		if msg == "" {
-			return Result{}, fmt.Errorf("run summarizer: %w", err)
-		}
-		return Result{}, fmt.Errorf("run summarizer: %w: %s", err, msg)
+		return Result{}, fmt.Errorf("run summarizer: %w: subprocess output redacted (stdout_bytes=%d stderr_bytes=%d)", err, stdout.Len(), stderr.Len())
 	}
 	result, err := ParseResult(stdout.String())
 	if err != nil {
