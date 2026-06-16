@@ -98,7 +98,7 @@ func CurrentStatus(cfg Config) Status {
 		_, err := os.Stat(cfg.PlistPath)
 		status.Installed = err == nil
 	}
-	status.Started = runLaunchctl("print", launchdDomain()+"/"+cfg.Label) == nil
+	status.Started = daemonProcessRunning()
 	return status
 }
 
@@ -132,6 +132,10 @@ func runLaunchctl(args ...string) error {
 		return err
 	}
 	return nil
+}
+
+func daemonProcessRunning() bool {
+	return exec.Command("pgrep", "-f", "agent-memoryd daemon").Run() == nil
 }
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
