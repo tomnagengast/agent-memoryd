@@ -39,7 +39,7 @@ Add and retrieve a memory from the CLI:
 ## Goals
 
 - Local-first memory store for coding agents
-- MCP tools for `search`, `get`, `add`, and `forget`
+- MCP tools for `search`, `get`, `add`, `forget`, and `reflect`
 - Agent-managed memories without burning the agent's main turn on note writing
 - Summarizer-driven transcript and git producers that store distilled memories with source pointers
 - Rebuildable source records with zvec-backed retrieval
@@ -114,7 +114,7 @@ mise run build-zvec
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
 - Retrieval: MCP tools and CLI commands share the same store.
 
-The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. These producers store distilled memories with transcript or commit references, not raw logs.
+The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. The MCP `reflect` tool uses the same summarizer path for the current session. These producers store distilled memories with transcript, session, or commit references, not raw logs.
 
 `agent-memoryd init` writes a resource manifest to the data root. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
 
@@ -137,5 +137,9 @@ Creates or updates a memory.
 `forget(id)`
 
 Deletes a memory from the local source store and derived index.
+
+`reflect(session?, transcript_path?, project?, cwd?, source?, limit?)`
+
+Extracts durable memories from the current session. If `session` is provided, the tool summarizes that text. Otherwise it uses `transcript_path`, or the newest configured transcript if no path is provided.
 
 See [docs/mcp.md](./docs/mcp.md) for MCP configuration and schemas.

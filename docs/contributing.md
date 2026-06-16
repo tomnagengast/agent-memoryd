@@ -43,13 +43,13 @@ Index adapters live in `internal/indexer` and `internal/zvecindex`.
 
 Keep `memories.jsonl` as the durable source of truth. Indexes should be rebuildable.
 
-Keep MCP tools compact. `search` should return summaries and ids; `get` should return full records only when needed.
+Keep MCP tools compact. `search` should return summaries and ids; `get` should return full records only when needed. `reflect` should store distilled memories through the summarizer, not raw session text.
 
 Do not add migration code from a private memory system. Public contributors should see a clean install path.
 
 Prefer local behavior over hosted services. External dependencies should be optional unless they are core to retrieval.
 
-Daemon producers should not store raw transcripts, tool logs, diffs, or git output as memory bodies. Pass source material to the summarizer and store only distilled memories with `source` and `More detail:` references.
+Daemon and MCP reflection producers should not store raw transcripts, session text, tool logs, diffs, or git output as memory bodies. Pass source material to the summarizer and store only distilled memories with `source` and `More detail:` references.
 
 ## Documentation
 

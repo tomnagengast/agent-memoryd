@@ -2,10 +2,16 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/tomnagengast/agent-memoryd/internal/memory"
+	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
 func TestRunTopLevelHelp(t *testing.T) {
@@ -67,6 +73,80 @@ func TestRunSubcommandHelp(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("subcommand help missing %q:\n%s", want, out)
 		}
+	}
+}
+
+type fakeReflectSummarizer struct {
+	req summarizer.Request
+}
+
+func (f *fakeReflectSummarizer) Summarize(_ context.Context, req summarizer.Request) (summarizer.Result, error) {
+	f.req = req
+	return summarizer.Result{Memories: []summarizer.GeneratedMemory{{
+		Kind:    "preference",
+		Summary: "Remember reflection preference",
+		Body:    "User wants a reflect tool to persist memories from the current session.",
+	}}}, nil
+}
+
+func TestReflectSessionTextStoresSummarizedMemory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	fake := &fakeReflectSummarizer{}
+	in := reflectInput{
+		Project: "agent-memoryd",
+		CWD:     "/tmp/agent-memoryd",
+		Source:  "session:test",
+		Session: "raw current session content that should only go to the summarizer",
+	}
+
+	records, err := reflectSessionText(ctx, store, fake, in, 5)
+	if err != nil {
+		t.Fatalf("reflect session text: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("len(records) = %d, want 1", len(records))
+	}
+	if fake.req.Producer != "reflect" || !strings.Contains(fake.req.SourceMaterial, in.Session) {
+		t.Fatalf("summarizer request = %#v, want reflect request with session material", fake.req)
+	}
+	if records[0].Kind != "preference" {
+		t.Fatalf("record kind = %q, want preference", records[0].Kind)
+	}
+	if !strings.Contains(records[0].Body, "More detail: Session: session:test") {
+		t.Fatalf("record body missing detail reference: %q", records[0].Body)
+	}
+	if strings.Contains(records[0].Body, in.Session) {
+		t.Fatalf("record body contains raw session material: %q", records[0].Body)
+	}
+}
+
+func TestLatestTranscriptReturnsNewestJSONL(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	oldPath := filepath.Join(root, "old.jsonl")
+	newPath := filepath.Join(root, "new.jsonl")
+	for _, path := range []string{oldPath, newPath} {
+		if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+			t.Fatalf("write transcript: %v", err)
+		}
+	}
+	oldTime := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
+	newTime := oldTime.Add(time.Hour)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatalf("chtime old transcript: %v", err)
+	}
+	if err := os.Chtimes(newPath, newTime, newTime); err != nil {
+		t.Fatalf("chtime new transcript: %v", err)
+	}
+
+	got, err := latestTranscript([]string{root})
+	if err != nil {
+		t.Fatalf("latest transcript: %v", err)
+	}
+	if got != newPath {
+		t.Fatalf("latest transcript = %q, want %q", got, newPath)
 	}
 }
 

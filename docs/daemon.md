@@ -25,6 +25,8 @@ A transcript must be unchanged for `idle_after` before it is indexed. The daemon
 
 The summarizer returns zero or more distilled memories. Those memories should capture durable information learned during the session, such as user preferences, standing instructions, project decisions, or follow-up context. Stored memories include the transcript path in `source` and a `More detail: Transcript: ...` reference in the body for progressive disclosure.
 
+The MCP `reflect` tool uses the same summarizer behavior on demand. It can summarize session text supplied by the MCP client, an explicit transcript path, or the newest configured transcript.
+
 ## Git Event Ingestion
 
 Git hooks should not summarize commits inline. They enqueue a small event file with the repository path and commit sha:

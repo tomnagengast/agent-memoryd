@@ -249,11 +249,11 @@ func newMCPCommand() *cobra.Command {
 		Short: "Run the MCP stdio server.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			cfg, store, err := loadIndexedStore()
 			if err != nil {
 				return err
 			}
-			return runMCP(cmd.Context(), store)
+			return runMCP(cmd.Context(), cfg, store)
 		},
 	}
 }
@@ -473,6 +473,7 @@ var mcpToolHelp = []helpItem{
 	{Name: "get", Summary: "fetch one full memory by id"},
 	{Name: "add", Summary: "create or update a durable memory"},
 	{Name: "forget", Summary: "delete a memory by id"},
+	{Name: "reflect", Summary: "extract durable memories from the current session"},
 }
 
 func helpItemsJSON(items []helpItem) []map[string]string {

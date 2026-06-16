@@ -44,15 +44,15 @@ func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
 			if s.IdleAfter > 0 && time.Since(info.ModTime()) < s.IdleAfter {
 				return nil
 			}
-			record, err := parseTranscript(path, info)
-			if err != nil || record.SourceMaterial == "" {
+			transcript, err := parseTranscript(path, info)
+			if err != nil || transcript.SourceMaterial == "" {
 				return nil
 			}
-			created, err := s.addTranscriptMemories(ctx, store, record, info)
+			records, err := StoreTranscriptMemories(ctx, store, s.Summarizer, s.MemoryContextLimit, transcript, info.ModTime().UTC())
 			if err != nil {
 				return err
 			}
-			ingested += created
+			ingested += len(records)
 			return nil
 		})
 		if err != nil {
@@ -62,7 +62,7 @@ func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
 	return ingested, nil
 }
 
-type transcriptRecord struct {
+type Transcript struct {
 	ID             string
 	Project        string
 	Path           string
@@ -75,10 +75,18 @@ type transcriptRecord struct {
 	SourceMaterial string
 }
 
-func parseTranscript(path string, info fs.FileInfo) (transcriptRecord, error) {
+func ReadTranscript(path string) (Transcript, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Transcript{}, err
+	}
+	return parseTranscript(path, info)
+}
+
+func parseTranscript(path string, info fs.FileInfo) (Transcript, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return transcriptRecord{}, err
+		return Transcript{}, err
 	}
 	defer file.Close()
 
@@ -122,16 +130,16 @@ func parseTranscript(path string, info fs.FileInfo) (transcriptRecord, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return transcriptRecord{}, err
+		return Transcript{}, err
 	}
 	if firstUser == "" && lastUser == "" && assistantTurns == 0 && toolCalls == 0 {
-		return transcriptRecord{}, nil
+		return Transcript{}, nil
 	}
 	project := filepath.Base(cwd)
 	if project == "." || project == "/" || project == "" {
 		project = filepath.Base(filepath.Dir(path))
 	}
-	return transcriptRecord{
+	return Transcript{
 		ID:             "session:" + fileID(path, info),
 		Project:        project,
 		Path:           path,
@@ -145,56 +153,63 @@ func parseTranscript(path string, info fs.FileInfo) (transcriptRecord, error) {
 	}, nil
 }
 
-func (s Scanner) addTranscriptMemories(ctx context.Context, store *memory.Store, record transcriptRecord, info fs.FileInfo) (int, error) {
-	if s.Summarizer == nil {
-		return 0, fmt.Errorf("transcript summarizer is not configured")
+func StoreTranscriptMemories(ctx context.Context, store *memory.Store, agent summarizer.Agent, contextLimit int, transcript Transcript, now time.Time) ([]memory.Record, error) {
+	if agent == nil {
+		return nil, fmt.Errorf("transcript summarizer is not configured")
 	}
-	existing, err := summarizer.ExistingMemoryRefs(ctx, store, record.Project, s.MemoryContextLimit)
+	existing, err := summarizer.ExistingMemoryRefs(ctx, store, transcript.Project, contextLimit)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	result, err := s.Summarizer.Summarize(ctx, summarizer.Request{
+	result, err := agent.Summarize(ctx, summarizer.Request{
 		Producer:         "transcript",
-		Project:          record.Project,
-		Source:           record.Path,
-		DetailReference:  "Transcript: " + record.Path,
-		SourceMaterial:   record.summarizerInput(),
+		Project:          transcript.Project,
+		Source:           transcript.Path,
+		DetailReference:  transcript.DetailReference(),
+		SourceMaterial:   transcript.SummarizerInput(),
 		ExistingMemories: existing,
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+	records := make([]memory.Record, 0, len(result.Memories))
 	for i, item := range result.Memories {
 		kind := item.Kind
 		if kind == "" {
 			kind = "session"
 		}
-		body := summarizer.EnsureDetailReference(item.Body, "Transcript: "+record.Path)
-		if _, err := store.Add(ctx, memory.AddRequest{
-			ID:      fmt.Sprintf("%s:%02d", record.ID, i),
+		body := summarizer.EnsureDetailReference(item.Body, transcript.DetailReference())
+		record, err := store.Add(ctx, memory.AddRequest{
+			ID:      fmt.Sprintf("%s:%02d", transcript.ID, i),
 			Kind:    kind,
-			Project: record.Project,
-			Source:  record.Path,
+			Project: transcript.Project,
+			Source:  transcript.Path,
 			Summary: item.Summary,
 			Body:    body,
-			Now:     info.ModTime().UTC(),
-		}); err != nil {
-			return i, err
+			Now:     now,
+		})
+		if err != nil {
+			return records, err
 		}
+		records = append(records, record)
 	}
-	return len(result.Memories), nil
+	return records, nil
 }
 
-func (r transcriptRecord) summarizerInput() string {
+func (t Transcript) DetailReference() string {
+	return "Transcript: " + t.Path
+}
+
+func (t Transcript) SummarizerInput() string {
 	return fmt.Sprintf("Transcript: %s\nCWD: %s\nModified: %s\nAssistant turns: %d\nTool calls: %d\nFirst user prompt: %s\nLast user prompt: %s\n\nRaw transcript JSONL:\n%s",
-		r.Path,
-		r.CWD,
-		r.Modified.Format(time.RFC3339),
-		r.AssistantTurns,
-		r.ToolCalls,
-		r.FirstUser,
-		r.LastUser,
-		r.SourceMaterial,
+		t.Path,
+		t.CWD,
+		t.Modified.Format(time.RFC3339),
+		t.AssistantTurns,
+		t.ToolCalls,
+		t.FirstUser,
+		t.LastUser,
+		t.SourceMaterial,
 	)
 }
 

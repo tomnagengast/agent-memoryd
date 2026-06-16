@@ -10,7 +10,7 @@ The index is derived data. The default build uses a pure-Go lexical index. A bin
 
 The daemon ingests two local input streams: idle transcript JSONL files and git event files. These producers do not store raw source material directly. They pass source material plus existing memory summaries to the configured summarizer, then store the distilled memories returned by that agent with source references for progressive disclosure.
 
-The MCP server exposes `search`, `get`, `add`, and `forget` over stdio. The CLI commands call the same store code as the MCP tools.
+The MCP server exposes `search`, `get`, `add`, `forget`, and `reflect` over stdio. The CLI commands call the same store code as the MCP tools.
 
 ## Retrieval Flow
 
@@ -18,7 +18,7 @@ Agents should call `search` first. Search returns summaries and ids, which keeps
 
 Manual or agent-managed updates use `add`. If an id is supplied, `add` updates that stable record. If no id is supplied, a new id is generated. Direct adds store the supplied body verbatim.
 
-Daemon-generated updates use the summarizer. Transcript and git producers provide raw source material to the summarizer, but the source store receives only the generated memory body plus a `source` pointer and `More detail:` reference.
+Daemon-generated updates and MCP `reflect` use the summarizer. Transcript, git, and reflection producers provide raw source material to the summarizer, but the source store receives only the generated memory body plus a `source` pointer and `More detail:` reference.
 
 Deletion uses `forget`. The record is removed from the source store and the derived index is updated.
 
