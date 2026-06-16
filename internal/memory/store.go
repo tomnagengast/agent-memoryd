@@ -19,8 +19,9 @@ var (
 )
 
 type Store struct {
-	mu   sync.Mutex
-	path string
+	mu    sync.Mutex
+	path  string
+	index Index
 }
 
 type SearchRequest struct {
@@ -40,7 +41,14 @@ type SearchResult struct {
 }
 
 func NewStore(path string) *Store {
-	return &Store{path: path}
+	return NewStoreWithIndex(path, LexicalIndex{})
+}
+
+func NewStoreWithIndex(path string, index Index) *Store {
+	if index == nil {
+		index = LexicalIndex{}
+	}
+	return &Store{path: path, index: index}
 }
 
 func (s *Store) Add(ctx context.Context, req AddRequest) (Record, error) {
@@ -69,7 +77,13 @@ func (s *Store) Add(ctx context.Context, req AddRequest) (Record, error) {
 		return Record{}, err
 	}
 	byID[record.ID] = record
-	return record, s.writeLocked(mapValues(byID))
+	if err := s.writeLocked(mapValues(byID)); err != nil {
+		return Record{}, err
+	}
+	if err := s.index.Upsert(ctx, record); err != nil {
+		return Record{}, fmt.Errorf("update memory index: %w", err)
+	}
+	return record, nil
 }
 
 func (s *Store) Get(ctx context.Context, id string) (Record, error) {
@@ -114,7 +128,13 @@ func (s *Store) Forget(ctx context.Context, id string) error {
 	if !found {
 		return ErrNotFound
 	}
-	return s.writeLocked(next)
+	if err := s.writeLocked(next); err != nil {
+		return err
+	}
+	if err := s.index.Delete(ctx, id); err != nil {
+		return fmt.Errorf("delete memory index: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, error) {
@@ -124,53 +144,53 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	query := strings.TrimSpace(req.Query)
-	if query == "" {
-		return nil, fmt.Errorf("search query is empty")
-	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 5
-	}
-	if limit > 50 {
-		limit = 50
-	}
 	records, err := s.readLocked()
 	if err != nil {
 		return nil, err
 	}
-	queryTokens := tokenSet(query)
-	results := make([]SearchResult, 0, len(records))
-	for _, record := range records {
-		if req.Kind != "" && record.Kind != req.Kind {
-			continue
-		}
-		if req.Project != "" && record.Project != req.Project {
-			continue
-		}
-		score := lexicalScore(queryTokens, record)
-		if score == 0 {
-			continue
-		}
-		results = append(results, SearchResult{
-			ID:      record.ID,
-			Kind:    record.Kind,
-			Project: record.Project,
-			Source:  record.Source,
-			Summary: record.Summary,
-			Score:   score,
-		})
+	return s.index.Search(ctx, records, req)
+}
+
+func (s *Store) List(ctx context.Context) ([]Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score == results[j].Score {
-			return results[i].ID < results[j].ID
-		}
-		return results[i].Score > results[j].Score
-	})
-	if len(results) > limit {
-		results = results[:limit]
+	return s.readLocked()
+}
+
+func (s *Store) RebuildIndex(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	return results, nil
+	records, err := s.readLocked()
+	if err != nil {
+		return err
+	}
+	return s.index.Rebuild(ctx, records)
+}
+
+func (s *Store) Status(ctx context.Context) (Status, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return Status{}, err
+	}
+	records, err := s.readLocked()
+	if err != nil {
+		return Status{}, err
+	}
+	return Status{
+		Path:        s.path,
+		Index:       s.index.Name(),
+		MemoryCount: len(records),
+	}, nil
 }
 
 func (s *Store) readLocked() ([]Record, error) {
@@ -185,6 +205,7 @@ func (s *Store) readLocked() ([]Record, error) {
 
 	var records []Record
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -228,32 +249,6 @@ func (s *Store) writeLocked(records []Record) error {
 		return fmt.Errorf("replace memory store: %w", err)
 	}
 	return nil
-}
-
-func tokenSet(text string) map[string]struct{} {
-	set := map[string]struct{}{}
-	for _, token := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
-	}) {
-		if token != "" {
-			set[token] = struct{}{}
-		}
-	}
-	return set
-}
-
-func lexicalScore(query map[string]struct{}, record Record) float64 {
-	textTokens := tokenSet(record.Summary + " " + record.Body + " " + record.Kind + " " + record.Project)
-	var hits int
-	for token := range query {
-		if _, ok := textTokens[token]; ok {
-			hits++
-		}
-	}
-	if hits == 0 {
-		return 0
-	}
-	return float64(hits) / float64(len(query))
 }
 
 func mapValues(records map[string]Record) []Record {

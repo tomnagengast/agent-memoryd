@@ -11,7 +11,25 @@ run = "go test ./..."
 
 [tasks.build]
 description = "Build the agent-memoryd binary"
-run = "go build ./cmd/agent-memoryd"
+run = "go build -o ./agent-memoryd ./cmd/agent-memoryd"
+
+[tasks.build-zvec]
+description = "Build with the zvec-go index adapter"
+run = '''
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) zvec_platform=darwin_arm64 ;;
+  Linux-x86_64) zvec_platform=linux_amd64 ;;
+  Linux-aarch64) zvec_platform=linux_arm64 ;;
+  *) echo "unsupported zvec prebuilt platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+CGO_CFLAGS="-I$(pwd)/lib/include" \
+CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,$(pwd)/lib/${zvec_platform}" \
+CGO_ENABLED=1 go build -tags zvec -o ./agent-memoryd ./cmd/agent-memoryd
+'''
+
+[tasks.zvec-libs]
+description = "Download zvec native libraries for build-zvec"
+run = "go run github.com/zvec-ai/zvec-go/cmd/download-libs@v0.5.0 -version v0.5.0 -dest ./lib"
 
 [tasks.tidy]
 description = "Tidy Go modules"

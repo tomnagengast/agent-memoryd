@@ -2,7 +2,10 @@ module github.com/tomnagengast/agent-memoryd
 
 go 1.26.3
 
-require github.com/modelcontextprotocol/go-sdk v1.6.1
+require (
+	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/zvec-ai/zvec-go v0.5.0
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.3 // indirect

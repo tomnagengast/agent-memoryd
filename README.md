@@ -31,14 +31,63 @@ mise run test
 mise run build
 ```
 
-The first implementation keeps source records in a local JSONL file and uses a
-small lexical search fallback so the project can be built and tested without
-native zvec libraries.
+Initialize local config:
+
+```sh
+agent-memoryd init
+```
+
+Run the MCP server over stdio:
+
+```sh
+agent-memoryd mcp
+```
+
+Run the resident worker:
+
+```sh
+agent-memoryd daemon
+```
+
+Generate a launchd plist:
+
+```sh
+agent-memoryd launchd-plist --bin "$(command -v agent-memoryd)"
+```
+
+Queue a git summary event:
+
+```sh
+agent-memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
+```
+
+The default build keeps source records in a local JSONL file and uses a small
+lexical search fallback so contributors can build and test without native zvec
+libraries.
 
 The production retrieval index will use
 [`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go). That SDK uses
 cgo and native zvec libraries, so it will be integrated behind a narrow index
-adapter instead of being required for the basic contributor test loop.
+adapter instead of being required for the basic contributor test loop:
+
+```sh
+mise run zvec-libs
+mise run build-zvec
+```
+
+## Architecture
+
+`agent-memoryd` has four layers:
+
+- Source store: a rebuildable JSONL memory log under `AGENT_MEMORYD_HOME`.
+- Index: lexical by default, zvec-go behind the `zvec` build tag.
+- Ingest: daemon polling for idle transcript JSONL files and git spool events.
+- Retrieval: MCP tools and CLI commands share the same store.
+
+The daemon watches configured transcript roots, waits until a transcript is idle,
+then creates or updates a `session` memory. Git hooks do not summarize inline;
+they enqueue a small event file, and the daemon turns that into a `git-summary`
+memory out of band.
 
 ## MCP Tools
 

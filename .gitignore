@@ -12,6 +12,7 @@ wheels/
 .codex/
 plans/
 .archive/
+lib/
 
 # Generated local data
 /agent-memoryd
