@@ -1,17 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "osascript -e 'display notification \"Hi Claude\" with title \"Current Path\"'",
-            "async": true
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -19,7 +7,7 @@
             "type": "command",
             "command": "python3",
             "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/research-on-sparse-prompt.py"
+              "${CLAUDE_PROJECT_DIR}/.agents/hooks/research-on-sparse-prompt.py"
             ],
             "timeout": 150
           }
@@ -33,7 +21,7 @@
             "type": "command",
             "command": "python3",
             "args": [
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/reflect-stop.py"
+              "${CLAUDE_PROJECT_DIR}/.agents/hooks/reflect-stop.py"
             ],
             "async": true,
             "timeout": 30

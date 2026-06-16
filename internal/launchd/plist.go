@@ -17,6 +17,7 @@ type Config struct {
 	Root      string
 	LogDir    string
 	PlistPath string
+	Path      string
 }
 
 type Status struct {
@@ -32,6 +33,9 @@ func Render(cfg Config) (string, error) {
 	if cfg.Label == "" {
 		cfg.Label = "dev.agent-memoryd"
 	}
+	if cfg.Path == "" {
+		cfg.Path = DefaultPath()
+	}
 	tpl := template.Must(template.New("plist").Parse(plistTemplate))
 	var buf bytes.Buffer
 	if err := tpl.Execute(&buf, cfg); err != nil {
@@ -43,6 +47,9 @@ func Render(cfg Config) (string, error) {
 func InstallAndStart(cfg Config) (Status, error) {
 	if cfg.Label == "" {
 		cfg.Label = "dev.agent-memoryd"
+	}
+	if cfg.Path == "" {
+		cfg.Path = DefaultPath()
 	}
 	status := CurrentStatus(cfg)
 	if !status.Supported {
@@ -103,6 +110,13 @@ func BootoutAndRemove(path string) error {
 	return nil
 }
 
+func DefaultPath() string {
+	if path := os.Getenv("PATH"); path != "" {
+		return path
+	}
+	return "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
 func launchdDomain() string {
 	return "gui/" + strconv.Itoa(os.Getuid())
 }
@@ -139,6 +153,8 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <dict>
     <key>AGENT_MEMORYD_HOME</key>
     <string>{{ .Root }}</string>
+    <key>PATH</key>
+    <string>{{ .Path }}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>{{ .LogDir }}/agent-memoryd.out.log</string>

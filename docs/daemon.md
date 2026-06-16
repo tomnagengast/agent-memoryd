@@ -65,6 +65,8 @@ You can replace `summarizer_command` in `config.json` with another local agent c
 
 It then runs `launchctl bootstrap` and `launchctl kickstart` so the daemon is up immediately.
 
+The plist includes `AGENT_MEMORYD_HOME` and the PATH from the shell that ran `init`, so default commands such as `codex` can be found when launchd starts the daemon.
+
 Render a macOS LaunchAgent plist without installing it:
 
 ```sh
