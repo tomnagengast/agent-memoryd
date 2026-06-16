@@ -147,7 +147,7 @@ func (m Model) View() tea.View {
 		t.headerAccent.Render("◆ ") + t.headerBrand.Render("agent-memoryd") + t.headerSub.Render("   memory explorer"),
 	)
 	search := lipgloss.NewStyle().Padding(0, 1).Render(
-		t.searchIcon.Render("⌕  ") + m.input.View(),
+		t.searchIcon.Render("❯  ") + m.input.View(),
 	)
 	rule := t.rule.Render(strings.Repeat("─", max(1, m.width)))
 	status := m.statusBar()
@@ -635,7 +635,7 @@ func newTheme(isDark bool) theme {
 	t.headerBrand = lipgloss.NewStyle().Bold(true).Foreground(fg)
 	t.headerAccent = lipgloss.NewStyle().Foreground(accent)
 	t.headerSub = lipgloss.NewStyle().Foreground(faint)
-	t.searchIcon = lipgloss.NewStyle().Foreground(accent)
+	t.searchIcon = lipgloss.NewStyle().Foreground(accent).Bold(true)
 	t.rule = lipgloss.NewStyle().Foreground(border)
 	t.faintStyle = lipgloss.NewStyle().Foreground(faint)
 	t.errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#F87171"))
