@@ -9,6 +9,7 @@ Local memory daemon for coding agents.
 ```sh
 mise install
 mise run build
+./agent-memoryd --help
 ./agent-memoryd init
 ./agent-memoryd status
 ```
@@ -52,6 +53,8 @@ Add and retrieve a memory from the CLI:
 `init` creates the managed data root, config, memory store, git spool, logs directory, and resource manifest.
 
 `status` prints system help, MCP tool help, loaded config, store status, and every resource persisted by `init`.
+
+`help` and `--help` show command help. `completion` generates shell completion scripts.
 
 `mcp` runs the stdio MCP server.
 

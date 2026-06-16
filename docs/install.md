@@ -25,10 +25,10 @@ The binary is written to `./agent-memoryd`.
 Verify the build:
 
 ```sh
-./agent-memoryd status
+./agent-memoryd --help
 ```
 
-If the system has not been initialized yet, `status` still reports the planned resource paths for the default data root.
+`--help` does not require an initialized data root or config file. After initialization, `status` reports the planned and existing resource paths for the configured data root.
 
 ## Initialize
 

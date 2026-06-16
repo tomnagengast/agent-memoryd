@@ -7,6 +7,7 @@ This guide walks through a local install that an agent can use over MCP.
 ```sh
 mise install
 mise run build
+./agent-memoryd --help
 ./agent-memoryd init
 ./agent-memoryd status
 ```
