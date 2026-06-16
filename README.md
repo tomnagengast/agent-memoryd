@@ -37,6 +37,13 @@ Initialize local config:
 agent-memoryd init
 ```
 
+Inspect the system, including command help and every managed resource created by
+`init`:
+
+```sh
+agent-memoryd status
+```
+
 Run the MCP server over stdio:
 
 ```sh
@@ -59,6 +66,13 @@ Queue a git summary event:
 
 ```sh
 agent-memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
+```
+
+Remove the managed data root, config, manifest, store, index, spool, logs, and
+LaunchAgent plist if present:
+
+```sh
+agent-memoryd uninstall --yes
 ```
 
 The default build keeps source records in a local JSONL file and uses a small
@@ -88,6 +102,10 @@ The daemon watches configured transcript roots, waits until a transcript is idle
 then creates or updates a `session` memory. Git hooks do not summarize inline;
 they enqueue a small event file, and the daemon turns that into a `git-summary`
 memory out of band.
+
+`agent-memoryd init` writes a resource manifest to the data root. `status` reads
+that manifest and reports whether each managed path exists. `uninstall --yes`
+uses the same manifest to tear down the local system resources it owns.
 
 ## MCP Tools
 

@@ -22,24 +22,34 @@ import (
 
 func Run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: agent-memoryd <init|status|add|search|get|forget|reindex|mcp|daemon|scan-once|enqueue-git|launchd-plist>")
+		return fmt.Errorf("usage: agent-memoryd <init|status|uninstall|add|search|get|forget|reindex|mcp|daemon|scan-once|enqueue-git|launchd-plist>")
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	index, err := indexer.New(cfg)
-	if err != nil {
-		return err
-	}
-	store := memory.NewStoreWithIndex(cfg.StorePath, index)
 	ctx := context.Background()
 
 	switch args[0] {
 	case "init":
 		return runInit(args[1:])
 	case "status":
-		return runStatus(ctx, cfg, store)
+		return runStatus(ctx, cfg)
+	case "uninstall":
+		return runUninstall(cfg, args[1:])
+	case "enqueue-git":
+		return runEnqueueGit(cfg, args[1:])
+	case "launchd-plist":
+		return runLaunchdPlist(cfg, args[1:])
+	}
+
+	index, err := indexer.New(cfg)
+	if err != nil {
+		return err
+	}
+	store := memory.NewStoreWithIndex(cfg.StorePath, index)
+
+	switch args[0] {
 	case "add":
 		return runAdd(ctx, store, args[1:])
 	case "search":
@@ -56,10 +66,6 @@ func Run(args []string) error {
 		return runDaemon(cfg, store)
 	case "scan-once":
 		return runScanOnce(ctx, cfg, store)
-	case "enqueue-git":
-		return runEnqueueGit(cfg, args[1:])
-	case "launchd-plist":
-		return runLaunchdPlist(cfg, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -71,26 +77,66 @@ func runInit(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if err := config.WriteDefault(*path); err != nil {
+	cfg, manifest, err := config.Init(*path)
+	if err != nil {
 		return err
 	}
-	cfg := config.Default()
 	out := config.ConfigPath(cfg.Root)
 	if *path != "" {
 		out = *path
 	}
-	return printJSON(map[string]any{"ok": true, "config": out})
+	return printJSON(map[string]any{
+		"ok":        true,
+		"config":    out,
+		"manifest":  config.ManifestPath(cfg.Root),
+		"resources": manifest.Resources,
+	})
 }
 
-func runStatus(ctx context.Context, cfg config.Config, store *memory.Store) error {
+func runStatus(ctx context.Context, cfg config.Config) error {
+	store := memory.NewStore(cfg.StorePath)
 	status, err := store.Status(ctx)
 	if err != nil {
 		return err
 	}
+	status.Index = cfg.IndexBackend
+	manifest, err := config.LoadManifest(cfg.Root)
+	if err != nil {
+		return err
+	}
 	return printJSON(map[string]any{
-		"config": cfg,
-		"store":  status,
+		"initialized": manifest.CreatedAt.IsZero() == false,
+		"help":        systemHelp(),
+		"config":      cfg,
+		"store":       status,
+		"resources":   manifest.Resources,
 	})
+}
+
+func runUninstall(cfg config.Config, args []string) error {
+	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
+	yes := fs.Bool("yes", false, "remove all managed agent-memoryd resources")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	manifest, err := config.LoadManifest(cfg.Root)
+	if err != nil {
+		return err
+	}
+	if !*yes {
+		return printJSON(map[string]any{
+			"ok":         false,
+			"needs_yes":  true,
+			"message":    "rerun with --yes to remove managed agent-memoryd resources",
+			"resources":  manifest.Resources,
+			"help":       systemHelp(),
+			"configured": cfg.Root,
+		})
+	}
+	if err := config.Uninstall(cfg, manifest); err != nil {
+		return err
+	}
+	return printJSON(map[string]any{"ok": true, "removed_root": cfg.Root})
 }
 
 func runAdd(ctx context.Context, store *memory.Store, args []string) error {
@@ -253,4 +299,30 @@ func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+func systemHelp() map[string]any {
+	return map[string]any{
+		"commands": []map[string]string{
+			{"name": "init", "summary": "create config, data directories, memory store, and resource manifest"},
+			{"name": "status", "summary": "show help, config, store status, and managed resources"},
+			{"name": "uninstall --yes", "summary": "remove managed agent-memoryd resources"},
+			{"name": "mcp", "summary": "run the MCP stdio server"},
+			{"name": "daemon", "summary": "run the resident ingest worker"},
+			{"name": "scan-once", "summary": "process git spool events and idle transcripts once"},
+			{"name": "enqueue-git", "summary": "enqueue a git commit summary event"},
+			{"name": "launchd-plist", "summary": "render a macOS LaunchAgent plist"},
+			{"name": "add", "summary": "create or update a memory"},
+			{"name": "search", "summary": "search memory summaries"},
+			{"name": "get", "summary": "fetch one full memory"},
+			{"name": "forget", "summary": "delete one memory"},
+			{"name": "reindex", "summary": "rebuild the configured retrieval index from the source store"},
+		},
+		"mcp_tools": []map[string]string{
+			{"name": "search", "summary": "search local memory summaries"},
+			{"name": "get", "summary": "fetch one full memory by id"},
+			{"name": "add", "summary": "create or update a durable memory"},
+			{"name": "forget", "summary": "delete a memory by id"},
+		},
+	}
 }

@@ -103,24 +103,7 @@ func WriteDefault(path string) error {
 	if path == "" {
 		path = ConfigPath(cfg.Root)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
-	body := map[string]any{
-		"root":             cfg.Root,
-		"store_path":       cfg.StorePath,
-		"index_backend":    cfg.IndexBackend,
-		"zvec_path":        cfg.ZvecPath,
-		"spool_dir":        cfg.SpoolDir,
-		"transcript_roots": cfg.TranscriptRoots,
-		"poll_interval":    cfg.PollInterval.String(),
-		"idle_after":       cfg.IdleAfter.String(),
-	}
-	data, err := json.MarshalIndent(body, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return writeDefaultTo(path, cfg)
 }
 
 func ConfigPath(root string) string {
