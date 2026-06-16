@@ -19,6 +19,7 @@ import (
 	"github.com/tomnagengast/agent-memoryd/internal/launchd"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/spool"
+	"github.com/tomnagengast/agent-memoryd/internal/version"
 )
 
 func Run(args []string) error {
@@ -43,14 +44,23 @@ func isUsageError(err error) bool {
 }
 
 func newRootCommand() *cobra.Command {
+	var showVersion bool
 	root := &cobra.Command{
 		Use:           "agent-memoryd",
 		Short:         "Local memory daemon for coding agents.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if showVersion {
+				fmt.Fprintln(cmd.OutOrStdout(), version.String())
+				return nil
+			}
+			return cmd.Help()
+		},
 	}
 	root.SetOut(os.Stdout)
 	root.SetErr(os.Stderr)
+	root.Flags().BoolVarP(&showVersion, "version", "v", false, "print version information")
 	root.AddCommand(
 		newInitCommand(),
 		newStatusCommand(),

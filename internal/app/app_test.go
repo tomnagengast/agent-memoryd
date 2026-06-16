@@ -37,6 +37,22 @@ func TestRunTopLevelHelp(t *testing.T) {
 	}
 }
 
+func TestRunVersion(t *testing.T) {
+	for _, arg := range []string{"-v", "--version"} {
+		t.Run(arg, func(t *testing.T) {
+			out, err := captureStdout(func() error {
+				return Run([]string{arg})
+			})
+			if err != nil {
+				t.Fatalf("Run(%q) returned error: %v", arg, err)
+			}
+			if !strings.Contains(out, "agent-memoryd") {
+				t.Fatalf("version output missing binary name:\n%s", out)
+			}
+		})
+	}
+}
+
 func TestRunUnknownCommandMentionsHelp(t *testing.T) {
 	err := Run([]string{"nope"})
 	if err == nil {

@@ -10,6 +10,7 @@ Local memory daemon for coding agents.
 mise install
 mise run build
 ./agent-memoryd --help
+./agent-memoryd --version
 ./agent-memoryd init
 ./agent-memoryd status
 ```
@@ -58,7 +59,7 @@ Add and retrieve a memory from the CLI:
 
 `status` prints system help, MCP tool help, loaded config, store status, launchd service status, and every resource persisted by `init`.
 
-`help` and `--help` show command help. `completion` generates shell completion scripts.
+`help` and `--help` show command help. `--version` and `-v` print build metadata. `completion` generates shell completion scripts.
 
 `mcp` runs the stdio MCP server.
 
@@ -96,6 +97,22 @@ This project uses mise for tool and task management.
 mise install
 mise run test
 mise run build
+```
+
+`mise run build` stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `AGENT_MEMORYD_VERSION` to override the displayed version for a release build.
+
+Compare the checked-out binary with the installed one:
+
+```sh
+./agent-memoryd --version
+agent-memoryd --version
+```
+
+Update the installed binary with an atomic replace:
+
+```sh
+mise run install-local
+agent-memoryd init
 ```
 
 The default build keeps source records in a local JSONL file and uses a small lexical search fallback so contributors can build and test without native zvec libraries.

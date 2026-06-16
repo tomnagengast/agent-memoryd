@@ -27,9 +27,26 @@ Verify the build:
 
 ```sh
 ./agent-memoryd --help
+./agent-memoryd --version
 ```
 
 `--help` does not require an initialized data root or config file. After initialization, `status` reports the planned and existing resource paths for the configured data root.
+
+`--version` and `-v` print the version, commit, and build time stamped by the `mise run build` task. Compare the repository binary with the installed binary to see whether your global copy needs refreshing:
+
+```sh
+./agent-memoryd --version
+agent-memoryd --version
+```
+
+Update the installed binary with an atomic replace so macOS does not kill executions of a launchd-managed binary that was overwritten in place:
+
+```sh
+mise run install-local
+agent-memoryd init
+```
+
+Release builds can set `AGENT_MEMORYD_VERSION`, usually to a semver tag such as `v0.1.0`. Without that override, the build task uses `git describe --tags --always --dirty`.
 
 ## Initialize
 
