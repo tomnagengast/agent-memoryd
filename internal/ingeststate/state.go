@@ -40,6 +40,7 @@ func Load(path string) (*State, error) {
 	if state.Inputs == nil {
 		state.Inputs = map[string]Input{}
 	}
+	state.normalize()
 	return &state, nil
 }
 
@@ -131,5 +132,23 @@ func backoff(attempts int) time.Duration {
 		return 5 * time.Minute
 	default:
 		return 15 * time.Minute
+	}
+}
+
+func (s *State) normalize() {
+	for key, input := range s.Inputs {
+		if input.LastAttemptAt != nil && input.LastAttemptAt.IsZero() {
+			input.LastAttemptAt = nil
+			s.changed = true
+		}
+		if input.NextAttemptAt != nil && input.NextAttemptAt.IsZero() {
+			input.NextAttemptAt = nil
+			s.changed = true
+		}
+		if input.ProcessedAt != nil && input.ProcessedAt.IsZero() {
+			input.ProcessedAt = nil
+			s.changed = true
+		}
+		s.Inputs[key] = input
 	}
 }
