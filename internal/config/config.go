@@ -63,6 +63,7 @@ func Default() Config {
 		TranscriptRoots: []string{
 			filepath.Join(homeDir(), ".claude", "projects"),
 			filepath.Join(homeDir(), ".codex", "sessions"),
+			filepath.Join(homeDir(), ".local", "share", "opencode"),
 		},
 		SummarizerCommand: []string{
 			"codex",

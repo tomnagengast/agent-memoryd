@@ -106,6 +106,116 @@ func TestScannerStoresSummarizedTranscriptMemoryWithSourceReference(t *testing.T
 	}
 }
 
+func TestScannerStoresOpenCodeExportedSession(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	transcript := filepath.Join(root, "opencode-session.json")
+	rawPrompt := "remember OpenCode exported sessions"
+	data := `{
+		"info":{"id":"ses_test","directory":"/tmp/agent-memoryd","time":{"updated":1781710400000}},
+		"messages":[
+			{"info":{"role":"user","path":{"cwd":"/tmp/agent-memoryd"}},"parts":[{"type":"text","text":"` + rawPrompt + `"}]},
+			{"info":{"role":"assistant","path":{"cwd":"/tmp/agent-memoryd"}},"parts":[{"type":"text","text":"ack"},{"type":"tool","tool":"bash"}]}
+		]
+	}`
+	if err := os.WriteFile(transcript, []byte(data), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	modTime := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(transcript, modTime, modTime); err != nil {
+		t.Fatalf("chtime transcript: %v", err)
+	}
+
+	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	fake := &fakeTranscriptSummarizer{}
+	scanner := Scanner{
+		Roots:      []string{root},
+		Summarizer: fake,
+	}
+
+	count, err := scanner.Scan(ctx, store)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if fake.req.Source != transcript {
+		t.Fatalf("source = %q, want %q", fake.req.Source, transcript)
+	}
+	if fake.req.Project != "agent-memoryd" {
+		t.Fatalf("project = %q, want agent-memoryd", fake.req.Project)
+	}
+	if !strings.Contains(fake.req.SourceMaterial, rawPrompt) {
+		t.Fatal("expected OpenCode export to be passed to summarizer")
+	}
+}
+
+func TestScannerUsesOpenCodeCLIForOpenCodeRoot(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "opencode")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir opencode root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "opencode.db"), nil, 0o644); err != nil {
+		t.Fatalf("write opencode db marker: %v", err)
+	}
+	fixture := filepath.Join(t.TempDir(), "export.json")
+	if err := os.WriteFile(fixture, []byte(`{
+		"info":{"id":"ses_cli","directory":"/tmp/agent-memoryd","time":{"updated":1781710400000}},
+		"messages":[{"info":{"role":"user"},"parts":[{"type":"text","text":"remember CLI exported sessions"}]}]
+	}`), 0o644); err != nil {
+		t.Fatalf("write export fixture: %v", err)
+	}
+	bin := t.TempDir()
+	script := filepath.Join(bin, "opencode")
+	if err := os.WriteFile(script, []byte(`#!/bin/sh
+if [ "$1" = "session" ] && [ "$2" = "list" ]; then
+  printf 'Session ID                      Title\n'
+  printf 'ses_cli                        Test session\n'
+  exit 0
+fi
+if [ "$1" = "export" ] && [ "$2" = "ses_cli" ]; then
+  cat "$OPENCODE_EXPORT_FIXTURE"
+  exit 0
+fi
+exit 1
+`), 0o755); err != nil {
+		t.Fatalf("write opencode script: %v", err)
+	}
+	t.Setenv("OPENCODE_EXPORT_FIXTURE", fixture)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	state := &ingeststate.State{Inputs: map[string]ingeststate.Input{}}
+	fake := &fakeTranscriptSummarizer{}
+	scanner := Scanner{
+		Roots:      []string{root},
+		Summarizer: fake,
+		State:      state,
+		Now:        time.Date(2026, 6, 16, 13, 0, 0, 0, time.UTC),
+	}
+
+	first, err := scanner.Scan(ctx, store)
+	if err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	second, err := scanner.Scan(ctx, store)
+	if err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if first != 1 || second != 0 {
+		t.Fatalf("scan counts = %d, %d; want 1, 0", first, second)
+	}
+	if fake.req.Source != "opencode:ses_cli" {
+		t.Fatalf("source = %q, want opencode:ses_cli", fake.req.Source)
+	}
+	if state.Inputs["opencode:ses_cli"].Status != "processed" {
+		t.Fatalf("opencode input state = %#v, want processed", state.Inputs["opencode:ses_cli"])
+	}
+}
+
 func TestScannerSkipsTranscriptsOlderThanCutoff(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

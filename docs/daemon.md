@@ -18,11 +18,12 @@ Run one pass without staying resident:
 
 ## Transcript Ingestion
 
-The daemon scans each configured `transcript_roots` entry for `.jsonl` files. By default those roots are:
+The daemon scans each configured `transcript_roots` entry for `.jsonl` files and exported OpenCode `.json` sessions. OpenCode data roots are handled through `opencode session list` plus `opencode export <sessionID>`, avoiding a SQLite dependency. By default those roots are:
 
 ```text
 ~/.claude/projects
 ~/.codex/sessions
+~/.local/share/opencode
 ```
 
 A transcript must be unchanged for `idle_after` before it is indexed. The daemon also skips transcript files whose modification time is older than the `resources.json` manifest creation time, so a fresh `init` does not backfill old agent history. The daemon reads eligible transcripts and passes transcript metadata, raw transcript content, and existing memory summaries to the configured `summarizer_command`. The raw transcript is not stored as the memory body.
