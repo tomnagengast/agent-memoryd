@@ -54,7 +54,15 @@ Git event failures are tracked in `ingest-state.json` with the same backoff beha
 The default summarizer command is:
 
 ```json
-["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "-"]
+[
+  "codex",
+  "exec",
+  "--sandbox",
+  "read-only",
+  "--skip-git-repo-check",
+  "--ephemeral",
+  "-"
+]
 ```
 
 You can replace `summarizer_command` in `config.json` with another local agent command. It must read the prompt from stdin and return JSON with a top-level `memories` array.

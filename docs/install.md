@@ -4,13 +4,13 @@
 
 ## System Requirements
 
-| Requirement | Notes |
-| --- | --- |
-| Go | Managed by `mise`; see `.mise.toml` for the pinned version. |
-| macOS or Linux | The default lexical build is pure Go. The zvec build currently has prebuilt native library support for macOS arm64 and Linux amd64/arm64. |
-| Git | Optional, but required for git hook ingestion and commit source material. |
-| Summarizer command | Required for daemon-generated transcript and git memories. The default config uses `codex exec`. |
-| C toolchain | Required only for the `zvec` build tag because `zvec-go` uses cgo. |
+| Requirement        | Notes                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Go                 | Managed by `mise`; see `.mise.toml` for the pinned version.                                                                               |
+| macOS or Linux     | The default lexical build is pure Go. The zvec build currently has prebuilt native library support for macOS arm64 and Linux amd64/arm64. |
+| Git                | Optional, but required for git hook ingestion and commit source material.                                                                 |
+| Summarizer command | Required for daemon-generated transcript and git memories. The default config uses `codex exec`.                                          |
+| C toolchain        | Required only for the `zvec` build tag because `zvec-go` uses cgo.                                                                        |
 
 ## Build From Source
 
