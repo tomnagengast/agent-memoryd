@@ -1,0 +1,10 @@
+[pre-start]
+toolchain = "command -v mise >/dev/null && mise trust && mise install || true"
+
+[[post-start]]
+copy = "wt step copy-ignored"
+[[post-start]]
+deps = "mise install"
+
+[list]
+summary = true
