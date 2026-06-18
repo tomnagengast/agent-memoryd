@@ -1,5 +1,6 @@
 # Temporary git exclusions
 .agents/skills/rpi
+.agents/agents
 
 # Local files
 .DS_Store
