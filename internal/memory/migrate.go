@@ -70,6 +70,14 @@ func migrateIfNeeded(coll *zvec.Collection, jsonlPath string) (int, error) {
 		return 0, fmt.Errorf("migrate flush: %w", err)
 	}
 
+	// Optimize merges pending FTS index segments so the imported records are
+	// durable and visible to FTS queries when the collection is reopened in a
+	// future process. Without this, FTS data written in one process is invisible
+	// after a close/reopen and cannot be recovered by a later Optimize call.
+	if err := coll.Optimize(); err != nil {
+		return 0, fmt.Errorf("migrate optimize: %w", err)
+	}
+
 	if err := os.Rename(jsonlPath, jsonlPath+".migrated"); err != nil {
 		return 0, fmt.Errorf("migrate rename: %w", err)
 	}

@@ -236,6 +236,12 @@ func (s *Server) dispatch(ctx context.Context, req Request) (any, *RPCError) {
 		}
 		return struct{ Count int `json:"count"` }{Count: count}, nil
 
+	case "optimize":
+		if err := s.api.Optimize(ctx); err != nil {
+			return nil, errToRPC(err)
+		}
+		return struct{}{}, nil
+
 	default:
 		return nil, &RPCError{Code: "internal", Msg: "unknown method: " + req.Method}
 	}
@@ -351,6 +357,11 @@ func (c *Client) Backfill(ctx context.Context) (int, error) {
 		Count int `json:"count"`
 	}
 	return result.Count, json.Unmarshal(raw, &result)
+}
+
+func (c *Client) Optimize(ctx context.Context) error {
+	_, err := c.call(ctx, "optimize", struct{}{})
+	return err
 }
 
 // compile-time assertion: *Client must satisfy memory.API.

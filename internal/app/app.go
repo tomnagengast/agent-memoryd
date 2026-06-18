@@ -542,6 +542,12 @@ type lockedStore struct {
 }
 
 func (l *lockedStore) Close() error {
+	// Optimize before closing so that records written in this session are
+	// durable and visible to FTS queries in future sessions. Best-effort:
+	// a failure here is logged but does not prevent the close or lock release.
+	if optErr := l.Store.Optimize(context.Background()); optErr != nil {
+		slog.Warn("lockedStore: optimize before close failed", "error", optErr)
+	}
 	storeErr := l.Store.Close()
 	lockErr := l.release()
 	if storeErr != nil {
@@ -745,6 +751,13 @@ func runDaemon(cfg config.Config, store *memory.Store) error {
 		Log:    slog.Default(),
 	}
 	runErr := d.Run(ctx)
+
+	// On graceful shutdown, optimize before the caller's deferred store.Close()
+	// runs so that any records added via RPC since the last pass are FTS-durable.
+	if optErr := store.Optimize(context.Background()); optErr != nil {
+		slog.Warn("daemon: optimize on shutdown failed", "error", optErr)
+	}
+
 	if errors.Is(runErr, context.Canceled) {
 		return nil
 	}

@@ -130,6 +130,23 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// Optimize merges pending FTS index segments so that records written in this
+// session are durable and visible to FTS queries in future sessions (i.e.
+// after a process restart). It is cheap (~0.4 ms) when nothing has changed and
+// ~200-400 ms when there are pending merges. It must be called before Close
+// when writes need to survive a process restart.
+func (s *Store) Optimize(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.coll.Optimize(); err != nil {
+		return fmt.Errorf("optimize: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Add(ctx context.Context, req AddRequest) (Record, error) {
 	// Normalize the caller-supplied ID to a form the zvec native lib accepts.
 	// Colons are a common namespace separator but are rejected by the lib; replace

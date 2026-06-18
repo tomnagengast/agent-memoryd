@@ -92,6 +92,8 @@ func (f *fakeAPI) Backfill(_ context.Context) (int, error) {
 	return 0, nil
 }
 
+func (f *fakeAPI) Optimize(_ context.Context) error { return nil }
+
 func (f *fakeAPI) Close() error { return nil }
 
 // startTestServer starts a server on a temp unix socket and returns the config
@@ -197,6 +199,17 @@ func TestProbe(t *testing.T) {
 
 	if !storerpc.Probe(cfg) {
 		t.Fatal("Probe returned false with an active listener")
+	}
+}
+
+func TestRoundTrip_Optimize(t *testing.T) {
+	fake := newFakeAPI()
+	cfg, _ := startTestServer(t, fake)
+
+	client := storerpc.NewClient(cfg)
+
+	if err := client.Optimize(context.Background()); err != nil {
+		t.Fatalf("Optimize: %v", err)
 	}
 }
 

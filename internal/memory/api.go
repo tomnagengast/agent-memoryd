@@ -13,6 +13,10 @@ type API interface {
 	List(ctx context.Context) ([]Record, error)
 	Status(ctx context.Context) (Status, error)
 	Backfill(ctx context.Context) (int, error)
+	// Optimize merges pending FTS index segments so that records written in
+	// this session are durable and visible to FTS queries in future sessions.
+	// Must be called before Close() when writes need to survive a process restart.
+	Optimize(ctx context.Context) error
 	Close() error
 }
 
