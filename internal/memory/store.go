@@ -2,9 +2,13 @@ package memory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +91,15 @@ func Open(cfg OpenConfig) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open zvec collection: %w", err)
 	}
+
+	// First-run migration: import legacy memories.jsonl (if present and collection
+	// is empty) into the zvec collection. Runs under zvec's exclusive directory lock.
+	jsonlPath := filepath.Join(filepath.Dir(cfg.ZvecPath), "memories.jsonl")
+	if _, migrErr := migrateIfNeeded(coll, jsonlPath); migrErr != nil {
+		coll.Close()
+		return nil, fmt.Errorf("migrate jsonl: %w", migrErr)
+	}
+
 	emb := cfg.Embedder
 	if emb == nil {
 		emb = embedder.Disabled{}
@@ -474,12 +487,30 @@ func escape(value string) string {
 	return strings.ReplaceAll(value, "'", "''")
 }
 
-// sanitizePK replaces characters rejected by the zvec native lib (colons) with
-// underscores so that namespaced IDs like "reflect:abc:00" can be stored.
-// Applied symmetrically on all write and lookup paths so callers always see the
-// sanitized form and can use it for subsequent Get/Forget calls.
+// pkInvalidChars matches any character NOT in the zvec-accepted allowlist.
+// zvec rejects ":", "/", space, and any non-ASCII byte in document primary keys;
+// only [A-Za-z0-9_#-] are accepted. Every other character is mapped to "_".
+var pkInvalidChars = regexp.MustCompile(`[^A-Za-z0-9_#\-]`)
+
+// pkMaxLen is the maximum primary-key length accepted by the zvec native lib.
+const pkMaxLen = 64
+
+// sanitizePK maps every character outside [A-Za-z0-9_#-] to "_" so that
+// namespaced IDs like "note:abc", "session/x y", etc. can be stored in zvec.
+// If the sanitized string still exceeds pkMaxLen (64), it is truncated to a
+// 32-char prefix + "#" + first 31 hex digits of sha256(full sanitized string),
+// producing a stable, collision-resistant 64-char key.
+// Applied symmetrically on all write and lookup paths so callers can always
+// round-trip using the original colon-separated ID in Get/Forget calls.
 func sanitizePK(id string) string {
-	return strings.ReplaceAll(id, ":", "_")
+	s := pkInvalidChars.ReplaceAllString(id, "_")
+	if len(s) <= pkMaxLen {
+		return s
+	}
+	// Truncate: keep first 32 chars, separator "#", then 31 hex chars of hash.
+	sum := sha256.Sum256([]byte(s))
+	h := hex.EncodeToString(sum[:])[:31]
+	return s[:32] + "#" + h
 }
 
 func docsToResults(docs []*zvec.Doc) []SearchResult {
