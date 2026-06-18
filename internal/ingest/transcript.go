@@ -30,7 +30,7 @@ type Scanner struct {
 	Now                time.Time
 }
 
-func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
+func (s Scanner) Scan(ctx context.Context, store memory.API) (int, error) {
 	var ingested int
 	for _, root := range s.Roots {
 		if err := ctx.Err(); err != nil {
@@ -103,7 +103,7 @@ func (s Scanner) Scan(ctx context.Context, store *memory.Store) (int, error) {
 	return ingested, nil
 }
 
-func (s Scanner) scanOpenCode(ctx context.Context, store *memory.Store) (int, error) {
+func (s Scanner) scanOpenCode(ctx context.Context, store memory.API) (int, error) {
 	ids, err := openCodeSessionIDs(ctx)
 	if err != nil {
 		return 0, err
@@ -262,7 +262,7 @@ func parseTranscript(path string, info fs.FileInfo) (Transcript, error) {
 	}, nil
 }
 
-func StoreTranscriptMemories(ctx context.Context, store *memory.Store, agent summarizer.Agent, contextLimit int, transcript Transcript, now time.Time) ([]memory.Record, error) {
+func StoreTranscriptMemories(ctx context.Context, store memory.API, agent summarizer.Agent, contextLimit int, transcript Transcript, now time.Time) ([]memory.Record, error) {
 	if agent == nil {
 		return nil, fmt.Errorf("transcript summarizer is not configured")
 	}

@@ -81,7 +81,7 @@ func (a CommandAgent) Summarize(ctx context.Context, req Request) (Result, error
 	return result, nil
 }
 
-func ExistingMemoryRefs(ctx context.Context, store *memory.Store, project string, limit int) ([]MemoryRef, error) {
+func ExistingMemoryRefs(ctx context.Context, store memory.API, project string, limit int) ([]MemoryRef, error) {
 	records, err := store.List(ctx)
 	if err != nil {
 		return nil, err
