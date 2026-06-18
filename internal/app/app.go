@@ -16,10 +16,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tomnagengast/agent-memoryd/internal/config"
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
+	"github.com/tomnagengast/agent-memoryd/internal/embedder"
 	"github.com/tomnagengast/agent-memoryd/internal/explore"
 	"github.com/tomnagengast/agent-memoryd/internal/githooks"
 	"github.com/tomnagengast/agent-memoryd/internal/importmem"
-	"github.com/tomnagengast/agent-memoryd/internal/indexer"
 	"github.com/tomnagengast/agent-memoryd/internal/launchd"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/spool"
@@ -102,7 +102,11 @@ func newInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store := memory.NewStore(cfg.StorePath)
+			_, store, err := loadStore()
+			if err != nil {
+				return err
+			}
+			defer store.Close()
 			memoryImport, err := runInitMemoryImport(cmd.Context(), store, initMemoryImportOptions{
 				Fresh:         fresh,
 				ImportPath:    importPath,
@@ -204,10 +208,11 @@ func newAddCommand() *cobra.Command {
 		Short: "Create or update a memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			req.Body = args[0]
 			record, err := store.Add(cmd.Context(), req)
 			if err != nil {
@@ -231,10 +236,11 @@ func newSearchCommand() *cobra.Command {
 		Short: "Search memory summaries.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			req.Query = args[0]
 			results, err := store.Search(cmd.Context(), req)
 			if err != nil {
@@ -255,10 +261,11 @@ func newGetCommand() *cobra.Command {
 		Short: "Fetch one full memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			record, err := store.Get(cmd.Context(), args[0])
 			if errors.Is(err, memory.ErrNotFound) {
 				return printJSON(map[string]any{"found": false, "id": args[0]})
@@ -277,10 +284,11 @@ func newForgetCommand() *cobra.Command {
 		Short: "Delete one memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			err = store.Forget(cmd.Context(), args[0])
 			if errors.Is(err, memory.ErrNotFound) {
 				return printJSON(map[string]any{"ok": false, "id": args[0]})
@@ -300,10 +308,11 @@ func newExploreCommand() *cobra.Command {
 		Short: "Explore memories in an interactive TUI.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return explore.Run(cmd.Context(), store, opts)
 		},
 	}
@@ -314,17 +323,19 @@ func newExploreCommand() *cobra.Command {
 func newReindexCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reindex",
-		Short: "Rebuild the configured retrieval index from the source store.",
+		Short: "Embed memories that are missing vectors.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := loadStore()
 			if err != nil {
 				return err
 			}
-			if err := store.RebuildIndex(cmd.Context()); err != nil {
+			defer store.Close()
+			count, err := store.Backfill(cmd.Context())
+			if err != nil {
 				return err
 			}
-			return printJSON(map[string]any{"ok": true})
+			return printJSON(map[string]any{"ok": true, "embedded": count})
 		},
 	}
 }
@@ -335,10 +346,11 @@ func newMCPCommand() *cobra.Command {
 		Short: "Run the MCP stdio server.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadIndexedStore()
+			cfg, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return runMCP(cmd.Context(), cfg, store)
 		},
 	}
@@ -350,10 +362,11 @@ func newDaemonCommand() *cobra.Command {
 		Short: "Run the resident ingest worker.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadIndexedStore()
+			cfg, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return runDaemon(cfg, store)
 		},
 	}
@@ -365,10 +378,11 @@ func newScanOnceCommand() *cobra.Command {
 		Short: "Process git spool events and idle transcripts once.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadIndexedStore()
+			cfg, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return runScanOnce(cmd.Context(), cfg, store)
 		},
 	}
@@ -442,25 +456,42 @@ func newLaunchdPlistCommand() *cobra.Command {
 	return cmd
 }
 
-func loadIndexedStore() (config.Config, *memory.Store, error) {
+func loadStore() (config.Config, *memory.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return config.Config{}, nil, err
 	}
-	index, err := indexer.New(cfg)
+	var emb embedder.Embedder = embedder.Disabled{}
+	if len(cfg.EmbedderCommand) > 0 {
+		emb = embedder.Command{
+			Argv:    cfg.EmbedderCommand,
+			Timeout: cfg.EmbedderTimeout,
+		}
+	}
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     cfg.ZvecPath,
+		EmbeddingDim: cfg.EmbeddingDim,
+		LockTimeout:  cfg.LockTimeout,
+		FTSWeight:    cfg.SearchFTSWeight,
+		VectorWeight: cfg.SearchVectorWeight,
+		Embedder:     emb,
+	})
 	if err != nil {
 		return config.Config{}, nil, err
 	}
-	return cfg, memory.NewStoreWithIndex(cfg.StorePath, index), nil
+	return cfg, store, nil
 }
 
 func runStatus(ctx context.Context, cfg config.Config) error {
-	store := memory.NewStore(cfg.StorePath)
+	_, store, err := loadStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
 	status, err := store.Status(ctx)
 	if err != nil {
 		return err
 	}
-	status.Index = cfg.IndexBackend
 	manifest, err := config.LoadManifest(cfg.Root)
 	if err != nil {
 		return err

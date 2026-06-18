@@ -23,3 +23,6 @@ lib/
 .agent-memoryd/
 /agent-memoryd
 coverage.out
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/

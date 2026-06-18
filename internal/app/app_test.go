@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
@@ -108,7 +107,7 @@ func (f *fakeReflectSummarizer) Summarize(_ context.Context, req summarizer.Requ
 func TestReflectSessionTextStoresSummarizedMemory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	fake := &fakeReflectSummarizer{}
 	in := reflectInput{
 		Project: "agent-memoryd",

@@ -12,12 +12,17 @@ import (
 type Config struct {
 	Root               string        `json:"root"`
 	StorePath          string        `json:"store_path"`
-	IndexBackend       string        `json:"index_backend"`
 	ZvecPath           string        `json:"zvec_path"`
 	SpoolDir           string        `json:"spool_dir"`
 	TranscriptRoots    []string      `json:"transcript_roots"`
 	SummarizerCommand  []string      `json:"summarizer_command"`
 	SummarizerTimeout  time.Duration `json:"summarizer_timeout"`
+	EmbedderCommand    []string      `json:"embedder_command"`
+	EmbedderTimeout    time.Duration `json:"embedder_timeout"`
+	EmbeddingDim       int           `json:"embedding_dim"`
+	SearchFTSWeight    float64       `json:"search_fts_weight"`
+	SearchVectorWeight float64       `json:"search_vector_weight"`
+	LockTimeout        time.Duration `json:"lock_timeout"`
 	MemoryContextLimit int           `json:"memory_context_limit"`
 	PollInterval       time.Duration `json:"poll_interval"`
 	IdleAfter          time.Duration `json:"idle_after"`
@@ -27,12 +32,17 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	type diskConfig struct {
 		Root               string   `json:"root"`
 		StorePath          string   `json:"store_path"`
-		IndexBackend       string   `json:"index_backend"`
 		ZvecPath           string   `json:"zvec_path"`
 		SpoolDir           string   `json:"spool_dir"`
 		TranscriptRoots    []string `json:"transcript_roots"`
 		SummarizerCommand  []string `json:"summarizer_command"`
 		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		EmbedderCommand    []string `json:"embedder_command"`
+		EmbedderTimeout    string   `json:"embedder_timeout"`
+		EmbeddingDim       int      `json:"embedding_dim"`
+		SearchFTSWeight    float64  `json:"search_fts_weight"`
+		SearchVectorWeight float64  `json:"search_vector_weight"`
+		LockTimeout        string   `json:"lock_timeout"`
 		MemoryContextLimit int      `json:"memory_context_limit"`
 		PollInterval       string   `json:"poll_interval"`
 		IdleAfter          string   `json:"idle_after"`
@@ -40,12 +50,17 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	return json.Marshal(diskConfig{
 		Root:               c.Root,
 		StorePath:          c.StorePath,
-		IndexBackend:       c.IndexBackend,
 		ZvecPath:           c.ZvecPath,
 		SpoolDir:           c.SpoolDir,
 		TranscriptRoots:    c.TranscriptRoots,
 		SummarizerCommand:  c.SummarizerCommand,
 		SummarizerTimeout:  c.SummarizerTimeout.String(),
+		EmbedderCommand:    c.EmbedderCommand,
+		EmbedderTimeout:    c.EmbedderTimeout.String(),
+		EmbeddingDim:       c.EmbeddingDim,
+		SearchFTSWeight:    c.SearchFTSWeight,
+		SearchVectorWeight: c.SearchVectorWeight,
+		LockTimeout:        c.LockTimeout.String(),
 		MemoryContextLimit: c.MemoryContextLimit,
 		PollInterval:       c.PollInterval.String(),
 		IdleAfter:          c.IdleAfter.String(),
@@ -55,11 +70,10 @@ func (c Config) MarshalJSON() ([]byte, error) {
 func Default() Config {
 	root := dataRoot()
 	return Config{
-		Root:         root,
-		StorePath:    filepath.Join(root, "memories.jsonl"),
-		IndexBackend: "lexical",
-		ZvecPath:     filepath.Join(root, "zvec"),
-		SpoolDir:     filepath.Join(root, "spool"),
+		Root:      root,
+		StorePath: filepath.Join(root, "memories.jsonl"), // legacy, used for migration only
+		ZvecPath:  filepath.Join(root, "zvec"),
+		SpoolDir:  filepath.Join(root, "spool"),
 		TranscriptRoots: []string{
 			filepath.Join(homeDir(), ".claude", "projects"),
 			filepath.Join(homeDir(), ".codex", "sessions"),
@@ -75,6 +89,12 @@ func Default() Config {
 			"-",
 		},
 		SummarizerTimeout:  5 * time.Minute,
+		EmbedderCommand:    nil,
+		EmbedderTimeout:    30 * time.Second,
+		EmbeddingDim:       768,
+		SearchFTSWeight:    0.5,
+		SearchVectorWeight: 0.5,
+		LockTimeout:        5 * time.Second,
 		MemoryContextLimit: 12,
 		PollInterval:       10 * time.Second,
 		IdleAfter:          2 * time.Minute,
@@ -94,12 +114,17 @@ func Load() (Config, error) {
 	var disk struct {
 		Root               string   `json:"root"`
 		StorePath          string   `json:"store_path"`
-		IndexBackend       string   `json:"index_backend"`
 		ZvecPath           string   `json:"zvec_path"`
 		SpoolDir           string   `json:"spool_dir"`
 		TranscriptRoots    []string `json:"transcript_roots"`
 		SummarizerCommand  []string `json:"summarizer_command"`
 		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		EmbedderCommand    []string `json:"embedder_command"`
+		EmbedderTimeout    string   `json:"embedder_timeout"`
+		EmbeddingDim       int      `json:"embedding_dim"`
+		SearchFTSWeight    float64  `json:"search_fts_weight"`
+		SearchVectorWeight float64  `json:"search_vector_weight"`
+		LockTimeout        string   `json:"lock_timeout"`
 		MemoryContextLimit int      `json:"memory_context_limit"`
 		PollInterval       string   `json:"poll_interval"`
 		IdleAfter          string   `json:"idle_after"`
@@ -112,9 +137,6 @@ func Load() (Config, error) {
 	}
 	if disk.StorePath != "" {
 		cfg.StorePath = expand(disk.StorePath)
-	}
-	if disk.IndexBackend != "" {
-		cfg.IndexBackend = disk.IndexBackend
 	}
 	if disk.ZvecPath != "" {
 		cfg.ZvecPath = expand(disk.ZvecPath)
@@ -137,6 +159,32 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("parse summarizer_timeout: %w", err)
 		}
 		cfg.SummarizerTimeout = d
+	}
+	if disk.EmbedderCommand != nil {
+		cfg.EmbedderCommand = append([]string(nil), disk.EmbedderCommand...)
+	}
+	if disk.EmbedderTimeout != "" {
+		d, err := time.ParseDuration(disk.EmbedderTimeout)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse embedder_timeout: %w", err)
+		}
+		cfg.EmbedderTimeout = d
+	}
+	if disk.EmbeddingDim > 0 {
+		cfg.EmbeddingDim = disk.EmbeddingDim
+	}
+	if disk.SearchFTSWeight != 0 {
+		cfg.SearchFTSWeight = disk.SearchFTSWeight
+	}
+	if disk.SearchVectorWeight != 0 {
+		cfg.SearchVectorWeight = disk.SearchVectorWeight
+	}
+	if disk.LockTimeout != "" {
+		d, err := time.ParseDuration(disk.LockTimeout)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse lock_timeout: %w", err)
+		}
+		cfg.LockTimeout = d
 	}
 	if disk.MemoryContextLimit > 0 {
 		cfg.MemoryContextLimit = disk.MemoryContextLimit

@@ -2,6 +2,6 @@ package memory
 
 type Status struct {
 	Path        string `json:"path"`
-	Index       string `json:"index"`
+	Backend     string `json:"backend"`
 	MemoryCount int    `json:"memory_count"`
 }

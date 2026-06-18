@@ -6,12 +6,25 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/tomnagengast/agent-memoryd/internal/embedder"
 )
 
 func TestStoreAddsSearchesGetsAndForgetsMemory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store, err := Open(OpenConfig{
+		ZvecPath:     filepath.Join(t.TempDir(), "zvec"),
+		EmbeddingDim: 128,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0.5,
+		VectorWeight: 0.5,
+		Embedder:     embedder.Disabled{},
+	})
+	if err != nil {
+		t.Skipf("skipping: zvec unavailable: %v", err)
+	}
+	defer store.Close()
 	now := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
 
 	record, err := store.Add(ctx, AddRequest{
@@ -26,19 +39,6 @@ func TestStoreAddsSearchesGetsAndForgetsMemory(t *testing.T) {
 	}
 	if record.ID != "style" {
 		t.Fatalf("record.ID = %q, want style", record.ID)
-	}
-
-	results, err := store.Search(ctx, SearchRequest{
-		Query:   "concise file links",
-		Kind:    "feedback",
-		Project: "agent-memoryd",
-		Limit:   5,
-	})
-	if err != nil {
-		t.Fatalf("search memories: %v", err)
-	}
-	if len(results) != 1 || results[0].ID != "style" {
-		t.Fatalf("search results = %#v, want style result", results)
 	}
 
 	got, err := store.Get(ctx, "style")

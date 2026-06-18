@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/tomnagengast/agent-memoryd/internal/memory"
 )
 
 func TestImportJSONLPreservesRecordFields(t *testing.T) {
@@ -17,7 +15,7 @@ func TestImportJSONLPreservesRecordFields(t *testing.T) {
 	if err := os.WriteFile(source, []byte(`{"id":"custom-id","kind":"preference","project":"agent-memoryd","source":"old","summary":"Keep init scriptable","body":"Init should stay scriptable while offering interactive setup."}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write import source: %v", err)
 	}
-	store := memory.NewStore(filepath.Join(dir, "store.jsonl"))
+	store := newTestStore(t)
 
 	result, err := Import(ctx, store, Options{Path: source})
 	if err != nil {
@@ -43,7 +41,7 @@ func TestImportMarkdownDirectoryUsesStableIDs(t *testing.T) {
 	if err := os.WriteFile(note, []byte("# Durable setup\n\nImport existing notes during init."), 0o644); err != nil {
 		t.Fatalf("write note: %v", err)
 	}
-	store := memory.NewStore(filepath.Join(t.TempDir(), "store.jsonl"))
+	store := newTestStore(t)
 
 	for i := 0; i < 2; i++ {
 		result, err := Import(ctx, store, Options{Path: dir, Project: "example"})
