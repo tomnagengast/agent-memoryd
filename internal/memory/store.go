@@ -18,9 +18,9 @@ import (
 )
 
 var (
-	ErrEmptyBody  = errors.New("memory body is empty")
-	ErrNotFound   = errors.New("memory not found")
-	ErrDimension  = errors.New("embedding dimension mismatch")
+	ErrEmptyBody = errors.New("memory body is empty")
+	ErrNotFound  = errors.New("memory not found")
+	ErrDimension = errors.New("embedding dimension mismatch")
 )
 
 var (
@@ -30,7 +30,17 @@ var (
 
 func initializeZvec() error {
 	zvecInitOnce.Do(func() {
-		if err := zvec.Initialize(nil); err != nil && !zvec.IsAlreadyExists(err) {
+		cfg := zvec.NewConfigData()
+		if cfg == nil {
+			zvecInitErr = fmt.Errorf("create zvec config")
+			return
+		}
+		defer cfg.Destroy()
+		if err := cfg.SetConsoleLog(zvec.LogLevelError); err != nil {
+			zvecInitErr = fmt.Errorf("configure zvec logging: %w", err)
+			return
+		}
+		if err := zvec.Initialize(cfg); err != nil && !zvec.IsAlreadyExists(err) {
 			zvecInitErr = err
 		}
 	})
