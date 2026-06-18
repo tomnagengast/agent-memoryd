@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tomnagengast/agent-memoryd/internal/embedder"
@@ -18,6 +19,20 @@ var (
 	ErrNotFound   = errors.New("memory not found")
 	ErrDimension  = errors.New("embedding dimension mismatch")
 )
+
+var (
+	zvecInitOnce sync.Once
+	zvecInitErr  error
+)
+
+func initializeZvec() error {
+	zvecInitOnce.Do(func() {
+		if err := zvec.Initialize(nil); err != nil && !zvec.IsAlreadyExists(err) {
+			zvecInitErr = err
+		}
+	})
+	return zvecInitErr
+}
 
 type Store struct {
 	coll     *zvec.Collection
@@ -54,7 +69,7 @@ type OpenConfig struct {
 }
 
 func Open(cfg OpenConfig) (*Store, error) {
-	if err := zvec.Initialize(nil); err != nil {
+	if err := initializeZvec(); err != nil {
 		return nil, fmt.Errorf("initialize zvec: %w", err)
 	}
 	lockPath := cfg.ZvecPath + ".lock"
@@ -97,6 +112,12 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Add(ctx context.Context, req AddRequest) (Record, error) {
+	// Normalize the caller-supplied ID to a form the zvec native lib accepts.
+	// Colons are a common namespace separator but are rejected by the lib; replace
+	// them with underscores before the ID is stamped into the Record.
+	if req.ID != "" {
+		req.ID = sanitizePK(req.ID)
+	}
 	record, err := NewRecord(req)
 	if err != nil {
 		return Record{}, err
@@ -129,7 +150,7 @@ func (s *Store) Get(ctx context.Context, id string) (Record, error) {
 	if err := ctx.Err(); err != nil {
 		return Record{}, err
 	}
-	docs, err := s.coll.Fetch([]string{id}, nil)
+	docs, err := s.coll.Fetch([]string{sanitizePK(id)}, nil)
 	if err != nil {
 		return Record{}, fmt.Errorf("fetch: %w", err)
 	}
@@ -142,7 +163,7 @@ func (s *Store) Get(ctx context.Context, id string) (Record, error) {
 
 func (s *Store) Forget(ctx context.Context, id string) error {
 	return s.lock.WithLock(ctx, func() error {
-		result, err := s.coll.Delete([]string{id})
+		result, err := s.coll.Delete([]string{sanitizePK(id)})
 		if err != nil {
 			return fmt.Errorf("delete: %w", err)
 		}
@@ -242,17 +263,18 @@ func (s *Store) List(ctx context.Context) ([]Record, error) {
 	if stats.DocCount == 0 {
 		return nil, nil
 	}
-	// Use FTS wildcard to enumerate all documents
+	// Use FTS match on the _tag field (all docs carry _tag="mem") to enumerate all documents.
+	// A Lucene wildcard "*" does not work with the standard tokenizer; matching the constant
+	// marker "mem" reliably returns every record regardless of its content.
 	query := zvec.NewSearchQuery()
 	defer query.Destroy()
-	if err := query.SetFieldName("summary"); err != nil {
+	if err := query.SetFieldName("_tag"); err != nil {
 		return nil, fmt.Errorf("list set field name: %w", err)
 	}
 	fts := zvec.NewFTS()
-	// Wildcard * matches all documents; SetQueryString uses BM25/Lucene syntax
-	if err := fts.SetQueryString("*"); err != nil {
+	if err := fts.SetMatchString("mem"); err != nil {
 		fts.Destroy()
-		return nil, fmt.Errorf("list set query string: %w", err)
+		return nil, fmt.Errorf("list set match string: %w", err)
 	}
 	if err := query.SetFTS(fts); err != nil {
 		fts.Destroy()
@@ -308,7 +330,7 @@ func (s *Store) Backfill(ctx context.Context) (int, error) {
 func newSchema(dim int) (*zvec.CollectionSchema, error) {
 	schema := zvec.NewCollectionSchema("agent_memoryd")
 
-	// String fields with FTS index on summary for text search
+	// String fields with FTS index on summary (and _tag for wildcard list) for text search
 	for _, fd := range []struct {
 		name    string
 		withFTS bool
@@ -317,13 +339,14 @@ func newSchema(dim int) (*zvec.CollectionSchema, error) {
 		{"project", false},
 		{"source", false},
 		{"summary", true},
+		{"_tag", true}, // constant "mem" on every doc; enables SetMatchString("mem") to list all
 		{"body", false},
 		{"created_at", false},
 		{"updated_at", false},
 	} {
 		field := zvec.NewFieldSchema(fd.name, zvec.DataTypeString, false, 0)
 		if fd.withFTS {
-			ftsParams, err := zvec.NewFTSIndexParams("default", nil, "")
+			ftsParams, err := zvec.NewFTSIndexParams("standard", nil, "")
 			if err != nil {
 				field.Destroy()
 				schema.Destroy()
@@ -372,12 +395,13 @@ func newSchema(dim int) (*zvec.CollectionSchema, error) {
 
 func recordToDoc(record Record, vec []float32) (*zvec.Doc, error) {
 	doc := zvec.NewDoc()
-	doc.SetPK(record.ID)
+	doc.SetPK(sanitizePK(record.ID))
 	fields := map[string]string{
 		"kind":       record.Kind,
 		"project":    record.Project,
 		"source":     record.Source,
 		"summary":    record.Summary,
+		"_tag":       "mem", // constant marker; allows SetMatchString("mem") to enumerate all docs
 		"body":       record.Body,
 		"created_at": record.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		"updated_at": record.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -438,6 +462,14 @@ func filterExpr(req SearchRequest) string {
 
 func escape(value string) string {
 	return strings.ReplaceAll(value, "'", "''")
+}
+
+// sanitizePK replaces characters rejected by the zvec native lib (colons) with
+// underscores so that namespaced IDs like "reflect:abc:00" can be stored.
+// Applied symmetrically on all write and lookup paths so callers always see the
+// sanitized form and can use it for subsequent Get/Forget calls.
+func sanitizePK(id string) string {
+	return strings.ReplaceAll(id, ":", "_")
 }
 
 func docsToResults(docs []*zvec.Doc) []SearchResult {
