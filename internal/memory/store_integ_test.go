@@ -14,6 +14,34 @@ import (
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 )
 
+// fakeEmbedder returns a constant dim-length vector for any input.
+type fakeEmbedder struct{ dim int }
+
+func (f fakeEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+	vec := make([]float32, f.dim)
+	for i := range vec {
+		vec[i] = 0.1
+	}
+	return vec, nil
+}
+
+// switchableEmbedder is an embedder that starts disabled and can be enabled.
+type switchableEmbedder struct {
+	dim     int
+	enabled bool
+}
+
+func (s *switchableEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
+	if !s.enabled {
+		return nil, embedder.ErrDisabled
+	}
+	vec := make([]float32, s.dim)
+	for i := range vec {
+		vec[i] = 0.1
+	}
+	return vec, nil
+}
+
 func testStore(t *testing.T) *memory.Store {
 	t.Helper()
 	// Skip if zvec libs not available
@@ -94,6 +122,18 @@ func TestStoreStatus(t *testing.T) {
 	}
 	if status.Backend != "zvec" {
 		t.Fatalf("expected 'zvec', got %q", status.Backend)
+	}
+	if status.PendingEmbedding != 2 {
+		t.Fatalf("expected 2 pending embeddings (Disabled embedder), got %d", status.PendingEmbedding)
+	}
+
+	// List must return same count as GetStats.
+	records, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("list: expected 2 records, got %d", len(records))
 	}
 }
 
@@ -219,5 +259,125 @@ func TestMigrationIsIdempotent(t *testing.T) {
 	}
 	if status2.MemoryCount != status1.MemoryCount {
 		t.Fatalf("second open: expected %d memories, got %d (duplication occurred)", status1.MemoryCount, status2.MemoryCount)
+	}
+}
+
+// TestBackfillEmbedsNullVectors verifies the Backfill / pendingCount / Status embedder-probe flow.
+//
+// Uses a switchable embedder (started disabled, then enabled) on a single store instance to
+// avoid the zvec FTS close-reopen limitation present in v0.5.0: FTS queries return 0 results
+// when an existing collection is opened in the same process after records were written.
+//
+// Phase 1 (embedder disabled): Add a record -> PendingEmbedding==1, Configured==false.
+// Phase 2 (embedder enabled): Backfill returns 1 -> PendingEmbedding==0,
+// Configured==true, OK==true, Dimension==128.
+func TestBackfillEmbedsNullVectors(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("CGO_ENABLED") == "0" {
+		t.Skip("skipping: cgo disabled")
+	}
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	// Open with a switchable embedder that starts disabled.
+	sw := &switchableEmbedder{dim: 128, enabled: false}
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     filepath.Join(dir, "zvec"),
+		EmbeddingDim: 128,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0.5,
+		VectorWeight: 0.5,
+		Embedder:     sw,
+	})
+	if err != nil {
+		t.Skipf("skipping: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	// --- Phase 1: embedder disabled -> Add stores a record with null embedding ---
+	_, addErr := store.Add(ctx, memory.AddRequest{
+		Summary: "pending embedding test",
+		Body:    "this record has no embedding yet",
+	})
+	if addErr != nil {
+		t.Fatalf("add: %v", addErr)
+	}
+	status1, err := store.Status(ctx)
+	if err != nil {
+		t.Fatalf("status phase1: %v", err)
+	}
+	if status1.PendingEmbedding != 1 {
+		t.Fatalf("phase1: expected PendingEmbedding=1, got %d", status1.PendingEmbedding)
+	}
+	if status1.Embedder.Configured {
+		t.Fatalf("phase1: expected Embedder.Configured=false with disabled embedder")
+	}
+
+	// --- Phase 2: enable embedder -> Backfill should embed the pending record ---
+	sw.enabled = true
+
+	n, err := store.Backfill(ctx)
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("backfill: expected 1 embedded, got %d", n)
+	}
+
+	status2, err := store.Status(ctx)
+	if err != nil {
+		t.Fatalf("status phase2: %v", err)
+	}
+	if status2.PendingEmbedding != 0 {
+		t.Fatalf("phase2: expected PendingEmbedding=0, got %d", status2.PendingEmbedding)
+	}
+	if !status2.Embedder.Configured {
+		t.Fatalf("phase2: expected Embedder.Configured=true")
+	}
+	if !status2.Embedder.OK {
+		t.Fatalf("phase2: expected Embedder.OK=true")
+	}
+	if status2.Embedder.Dimension != 128 {
+		t.Fatalf("phase2: expected Embedder.Dimension=128, got %d", status2.Embedder.Dimension)
+	}
+}
+
+// TestSearchFTSLegWithoutEmbedder verifies that FTS search works even with no embedder.
+func TestSearchFTSLegWithoutEmbedder(t *testing.T) {
+	t.Parallel()
+	store := testStore(t) // uses embedder.Disabled
+	ctx := context.Background()
+
+	_, err := store.Add(ctx, memory.AddRequest{
+		Summary: "golang channel patterns",
+		Body:    "select statement over multiple channels in Go",
+	})
+	if err != nil {
+		t.Fatalf("add golang: %v", err)
+	}
+	_, err = store.Add(ctx, memory.AddRequest{
+		Summary: "wine club tier pricing",
+		Body:    "bajka winery tier one two three pricing",
+	})
+	if err != nil {
+		t.Fatalf("add wine: %v", err)
+	}
+
+	results, err := store.Search(ctx, memory.SearchRequest{Query: "wine", Limit: 5})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result for 'wine'")
+	}
+	found := false
+	for _, r := range results {
+		if r.Summary == "wine club tier pricing" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected wine record in results; got: %+v", results)
 	}
 }

@@ -80,6 +80,16 @@ func Open(cfg OpenConfig) (*Store, error) {
 	var err error
 	if _, statErr := os.Stat(cfg.ZvecPath); statErr == nil {
 		coll, err = zvec.Open(cfg.ZvecPath, nil)
+		if err == nil {
+			// Flush immediately after opening an existing collection to ensure the
+			// FTS index is fully loaded and available for queries. Without this,
+			// FTS queries return 0 results when the collection is reopened within
+			// the same process after records were previously written via Upsert+Flush.
+			if flushErr := coll.Flush(); flushErr != nil {
+				coll.Close()
+				return nil, fmt.Errorf("post-open flush: %w", flushErr)
+			}
+		}
 	} else {
 		schema, schemaErr := newSchema(cfg.EmbeddingDim)
 		if schemaErr != nil {
@@ -332,22 +342,214 @@ func (s *Store) Status(ctx context.Context) (Status, error) {
 	if err := ctx.Err(); err != nil {
 		return Status{}, err
 	}
+
+	// Get stats under lock.
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	stats, err := s.coll.GetStats()
+	s.mu.Unlock()
 	if err != nil {
 		return Status{}, fmt.Errorf("get stats: %w", err)
 	}
+
+	// Count pending embeddings (enumerates docs under lock).
+	pending, err := s.pendingCount(ctx)
+	if err != nil {
+		return Status{}, fmt.Errorf("pending count: %w", err)
+	}
+
+	// Probe embedder OUTSIDE the lock: subprocess call must not hold s.mu.
+	var probe EmbedderProbe
+	testVec, perr := s.embedder.Embed(ctx, "probe")
+	if perr == nil {
+		probe = EmbedderProbe{Configured: true, OK: true, Dimension: len(testVec)}
+	} else if errors.Is(perr, embedder.ErrDisabled) {
+		probe = EmbedderProbe{Configured: false}
+	} else {
+		probe = EmbedderProbe{Configured: true, OK: false}
+	}
+
 	return Status{
-		Path:        s.path,
-		Backend:     "zvec",
-		MemoryCount: int(stats.DocCount),
+		Path:             s.path,
+		Backend:          "zvec",
+		MemoryCount:      int(stats.DocCount),
+		PendingEmbedding: pending,
+		Embedder:         probe,
 	}, nil
 }
 
+// pendingCount returns the number of documents whose embedding has not been computed.
+// It enumerates PKs via the _tag FTS query, fetches without IncludeVector, and checks
+// the embedding_dim scalar field (0 = pending, >0 = embedded). This avoids using
+// zvec's nullable-vector introspection, which is unreliable on Fetch results without
+// IncludeVector, and avoids Fetch with IncludeVector, which errors on null embeddings.
+func (s *Store) pendingCount(ctx context.Context) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pks, err := s.allPKsLocked()
+	if err != nil {
+		return 0, fmt.Errorf("pending all pks: %w", err)
+	}
+	if len(pks) == 0 {
+		return 0, nil
+	}
+	fetchDocs, err := s.coll.Fetch(pks, nil)
+	if err != nil {
+		return 0, fmt.Errorf("pending fetch: %w", err)
+	}
+	defer zvec.FreeDocs(fetchDocs)
+	count := 0
+	for _, doc := range fetchDocs {
+		dim, _ := doc.GetInt32Field("embedding_dim")
+		if dim == 0 {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// allPKsLocked returns all document PKs by running the _tag FTS enumeration query.
+// Caller must hold s.mu.
+func (s *Store) allPKsLocked() ([]string, error) {
+	stats, err := s.coll.GetStats()
+	if err != nil {
+		return nil, fmt.Errorf("get stats: %w", err)
+	}
+	if stats.DocCount == 0 {
+		return nil, nil
+	}
+	query := zvec.NewSearchQuery()
+	defer query.Destroy()
+	if err := query.SetFieldName("_tag"); err != nil {
+		return nil, fmt.Errorf("set field name: %w", err)
+	}
+	fts := zvec.NewFTS()
+	if err := fts.SetMatchString("mem"); err != nil {
+		fts.Destroy()
+		return nil, fmt.Errorf("set match string: %w", err)
+	}
+	if err := query.SetFTS(fts); err != nil {
+		fts.Destroy()
+		return nil, fmt.Errorf("set fts: %w", err)
+	}
+	fts.Destroy()
+	topK := int(stats.DocCount)
+	if topK < 1 {
+		topK = 1
+	}
+	if topK > 10000 {
+		topK = 10000
+	}
+	if err := query.SetTopK(topK); err != nil {
+		return nil, fmt.Errorf("set topk: %w", err)
+	}
+	docs, err := s.coll.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer zvec.FreeDocs(docs)
+	pks := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		if pk := doc.GetPK(); pk != "" {
+			pks = append(pks, pk)
+		}
+	}
+	return pks, nil
+}
+
+// pendingItem holds the PK + text of a doc that needs its embedding filled.
+type pendingItem struct {
+	pk      string
+	summary string
+	body    string
+}
+
 func (s *Store) Backfill(ctx context.Context) (int, error) {
-	// Embeds rows with null vectors - placeholder; full implementation deferred to Phase 4
-	return 0, nil
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	// Enumerate all PKs via FTS query, then Fetch (no IncludeVector) to check
+	// which docs have null embeddings via IsFieldNull("embedding"). Two-step because
+	// FTS result batches never include vector columns, and Fetch with IncludeVector
+	// crashes internally on docs with null embeddings.
+	s.mu.Lock()
+	pks, pksErr := s.allPKsLocked()
+	if pksErr != nil {
+		s.mu.Unlock()
+		return 0, fmt.Errorf("backfill all pks: %w", pksErr)
+	}
+	var pending []pendingItem
+	if len(pks) > 0 {
+		fetchDocs, fetchErr := s.coll.Fetch(pks, nil)
+		if fetchErr != nil {
+			s.mu.Unlock()
+			return 0, fmt.Errorf("backfill fetch: %w", fetchErr)
+		}
+		for _, doc := range fetchDocs {
+			// embedding_dim == 0 means the embedding has not been computed yet.
+			dim, _ := doc.GetInt32Field("embedding_dim")
+			if dim == 0 {
+				summary, _ := doc.GetStringField("summary")
+				body, _ := doc.GetStringField("body")
+				pending = append(pending, pendingItem{
+					pk:      doc.GetPK(),
+					summary: summary,
+					body:    body,
+				})
+			}
+		}
+		zvec.FreeDocs(fetchDocs)
+	}
+	s.mu.Unlock() // RELEASE before any Embed subprocess calls.
+
+	embedded := 0
+	for _, item := range pending {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+		text := item.summary + "\n" + item.body
+		// Embed OUTSIDE the lock.
+		vec, embedErr := s.embedder.Embed(ctx, text)
+		if embedErr != nil || len(vec) != s.dim {
+			// Skip rows we can't embed (disabled, error, or wrong dim).
+			continue
+		}
+		// Re-fetch the doc fresh, update with vector, upsert - under lock.
+		s.mu.Lock()
+		freshDocs, fetchErr := s.coll.Fetch([]string{item.pk}, nil)
+		if fetchErr != nil || len(freshDocs) == 0 {
+			s.mu.Unlock()
+			continue
+		}
+		record, recErr := docToRecord(freshDocs[0])
+		zvec.FreeDocs(freshDocs)
+		if recErr != nil {
+			s.mu.Unlock()
+			continue
+		}
+		newDoc, docErr := recordToDoc(record, vec)
+		if docErr != nil {
+			s.mu.Unlock()
+			continue
+		}
+		_, upsertErr := s.coll.Upsert([]*zvec.Doc{newDoc})
+		newDoc.Destroy()
+		if upsertErr != nil {
+			s.mu.Unlock()
+			continue
+		}
+		if flushErr := s.coll.Flush(); flushErr != nil {
+			s.mu.Unlock()
+			continue
+		}
+		s.mu.Unlock()
+		embedded++
+	}
+	return embedded, nil
 }
 
 func newSchema(dim int) (*zvec.CollectionSchema, error) {
@@ -413,6 +615,17 @@ func newSchema(dim int) (*zvec.CollectionSchema, error) {
 	}
 	vector.Destroy()
 
+	// embedding_dim tracks whether a document's embedding is present (>0) or pending (0).
+	// This scalar field is reliable across Fetch calls and avoids dependence on zvec's
+	// nullable-vector introspection, which does not survive Fetch without IncludeVector.
+	dimField := zvec.NewFieldSchema("embedding_dim", zvec.DataTypeInt32, true, 0)
+	if err := schema.AddField(dimField); err != nil {
+		dimField.Destroy()
+		schema.Destroy()
+		return nil, fmt.Errorf("add embedding_dim field: %w", err)
+	}
+	dimField.Destroy()
+
 	return schema, nil
 }
 
@@ -440,11 +653,20 @@ func recordToDoc(record Record, vec []float32) (*zvec.Doc, error) {
 			doc.Destroy()
 			return nil, fmt.Errorf("add embedding: %w", err)
 		}
+		// Record that the embedding is present (dim > 0 = embedded, 0 = pending).
+		if err := doc.AddInt32Field("embedding_dim", int32(len(vec))); err != nil {
+			doc.Destroy()
+			return nil, fmt.Errorf("add embedding_dim: %w", err)
+		}
 	} else {
-		// Set null to indicate pending embedding
+		// Set null to indicate pending embedding; embedding_dim=0 marks pending state.
 		if err := doc.SetFieldNull("embedding"); err != nil {
 			doc.Destroy()
 			return nil, fmt.Errorf("set embedding null: %w", err)
+		}
+		if err := doc.AddInt32Field("embedding_dim", 0); err != nil {
+			doc.Destroy()
+			return nil, fmt.Errorf("add embedding_dim pending: %w", err)
 		}
 	}
 	return doc, nil
