@@ -54,10 +54,8 @@ MCP `add` passes the body as a JSON field and is immune — prefer it when scrip
 ## Verify an import
 
 ```sh
-# total records
-wc -l < ~/.local/share/agent-memoryd/memories.jsonl
-# by kind
-python3 -c "import json,collections;print(collections.Counter(json.loads(l)['kind'] for l in open('$HOME/.local/share/agent-memoryd/memories.jsonl') if l.strip()))"
+# total records and store health
+agent-memoryd status
 # spot-check retrieval
 agent-memoryd search --kind note "some topic"
 ```

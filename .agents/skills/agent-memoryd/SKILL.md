@@ -1,16 +1,16 @@
 ---
 name: agent-memoryd
-description: Local-first memory store and MCP server for coding agents — search, get, add, forget, and reflect over a rebuildable JSONL store with a lexical/zvec index, plus a daemon that ingests agent transcripts and git commits into distilled memories. Use when operating the memory store from the CLI (agent-memoryd add/search/get/forget/reindex) or its MCP tools; configuring or debugging the daemon, launchd service, git hooks, or summarizer; bulk-importing markdown/text/JSONL notes; reasoning about the record/store data model and its gotchas; or developing the agent-memoryd Go codebase. Triggers include the agent-memoryd binary or MCP server, the ~/.local/share/agent-memoryd data root, memories.jsonl, AGENT_MEMORYD_HOME, or the tomnagengast/agent-memoryd repo.
+description: Local-first memory store and MCP server for coding agents — search, get, add, forget, and reflect over a zvec-backed store owned by the daemon, plus transcript and git ingestion into distilled memories. Use when operating the memory store from the CLI (agent-memoryd add/search/get/forget/reindex) or its MCP tools; configuring or debugging the daemon, launchd service, git hooks, embedder, summarizer, or resource manifest; bulk-importing markdown/text/JSONL notes; reasoning about the record/store data model and its gotchas; or developing the agent-memoryd Go codebase. Triggers include the agent-memoryd binary or MCP server, the ~/.local/share/agent-memoryd data root, zvec store, AGENT_MEMORYD_HOME, or the tomnagengast/agent-memoryd repo.
 ---
 
 # agent-memoryd
 
-A small local service + MCP server that gives coding agents durable, searchable memories. One JSONL source store, a derived retrieval index, and a daemon that turns idle agent transcripts and git commits into distilled memories. The CLI and the MCP tools share the same store code.
+A small local service + MCP server that gives coding agents durable, searchable memories. One daemon owns the zvec store and serves CLI/MCP store operations over a Unix socket. The daemon also turns idle agent transcripts and git commits into distilled memories.
 
 ## Orientation
 
 - Binary: `agent-memoryd` (installed at `~/.local/bin/agent-memoryd`; in-repo build is `./agent-memoryd`).
-- Data root: `$AGENT_MEMORYD_HOME` or `~/.local/share/agent-memoryd`. Holds `config.json`, `memories.jsonl` (source of truth), `resources.json` (manifest), `spool/`, `git-hooks/`, `logs/`, optional `zvec/`.
+- Data root: `$AGENT_MEMORYD_HOME` or `~/.local/share/agent-memoryd`. Holds `config.json`, `resources.json` (manifest), `spool/`, `git-hooks/`, `logs/`, `zvec/`, and the daemon socket when running.
 - Interfaces: CLI subcommands and the stdio MCP server (`agent-memoryd mcp`). Both read/write the same store.
 - Repo: `github.com/tomnagengast/agent-memoryd`; Go, managed with `mise`; docs under `docs/`.
 
@@ -18,12 +18,12 @@ Check state first with `agent-memoryd status` (config, store count, service, git
 
 ## Critical facts (read before writing anything)
 
-1. `memories.jsonl` is the rebuildable **source of truth**; the index is derived. After any out-of-band edit, run `agent-memoryd reindex`.
+1. The daemon is the single zvec owner. CLI commands and MCP tools route store operations over `$AGENT_MEMORYD_HOME/agent-memoryd.sock`; if the daemon is not running, store operations fail.
 2. `add` is an **upsert by `id`**. Pass a stable `id` for idempotency; **omitting `id` in a loop creates duplicates**.
 3. **CLI `add` dash gotcha**: the body is a trailing positional arg. A body starting with `-` (markdown bullet) is parsed as a flag (`unknown shorthand flag`). Pass it after a `--` sentinel and use `--flag=value` form. MCP `add` is immune (body is a JSON field).
 4. Direct `add` stores the body **verbatim**. Only daemon producers and `reflect` summarize.
-5. Every op reads the store file **fresh**; there is no record cache. CLI/MCP/daemon all see current disk state. There is no cross-process file lock, so prefer sequential writes for batches.
-6. **`uninstall --yes` deletes the entire data root** (including `memories.jsonl`). Back up before destructive ops.
+5. `reindex` backfills embeddings for records that were written without an embedder or when embedding failed. It does not rebuild from a JSONL source.
+6. **`uninstall --yes` deletes the entire data root** (including `zvec/`). Back up before destructive ops.
 7. CLI output is pretty JSON on stdout — pipe through `jq`/`python3` to extract fields.
 
 ## Common tasks
@@ -69,7 +69,7 @@ Config schema, ingestion details, summarizer contract, launchd/logs, git-hook be
 ```sh
 mise install
 mise run test            # go test ./...
-mise run build           # -> ./agent-memoryd (lexical, no native deps)
+mise run build           # -> ./agent-memoryd (zvec-backed, cgo)
 mise run install-local   # atomic replace of ~/.local/bin/agent-memoryd
 mise run build-zvec      # vector index (needs `mise run zvec-libs`, cgo)
 ```

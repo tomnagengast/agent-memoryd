@@ -16,13 +16,14 @@ Config is JSON at `$AGENT_MEMORYD_HOME/config.json`; when `AGENT_MEMORYD_HOME` i
 | key | default | meaning |
 |---|---|---|
 | `root` | `~/.local/share/agent-memoryd` | managed data dir; **`uninstall --yes` deletes it** |
-| `store_path` | `<root>/memories.jsonl` | JSONL source of truth |
-| `index_backend` | `lexical` | `lexical` or `zvec` (needs zvec build) |
-| `zvec_path` | `<root>/zvec` | zvec index dir (zvec backend only) |
+| `store_path` | `<root>/memories.jsonl` | legacy migration path only |
+| `zvec_path` | `<root>/zvec` | durable zvec store |
 | `spool_dir` | `<root>/spool` | queued git events |
 | `transcript_roots` | `~/.claude/projects`, `~/.codex/sessions` | dirs scanned for idle `.jsonl` transcripts |
 | `summarizer_command` | `codex exec --sandbox read-only --skip-git-repo-check --ephemeral -` | distills source material into memories |
 | `summarizer_timeout` | `5m0s` | bound per summarizer run |
+| `embedder_command` | empty | optional command that returns JSON float vectors |
+| `embedding_dim` | `768` | expected embedder vector dimension |
 | `memory_context_limit` | `12` | existing summaries sent to summarizer for dedup |
 | `poll_interval` | `10s` | daemon ingest cadence |
 | `idle_after` | `2m0s` | transcript must be unchanged this long before indexing |

@@ -27,7 +27,7 @@ Add a memory:
   --kind fact \
   --project example \
   --summary "Agent memory stores durable local notes" \
-  "agent-memoryd stores source records in JSONL and rebuilds its retrieval index."
+  "agent-memoryd stores durable records in zvec and serves them through the daemon."
 ```
 
 Search summaries:

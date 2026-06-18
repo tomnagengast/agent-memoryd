@@ -67,7 +67,7 @@ Returns `{"ok": true, "id": "..."}`, or `{"ok": false, ...}` if not found. Remov
 agent-memoryd reindex
 ```
 
-Rebuilds the configured index from `memories.jsonl`. Run after hand-editing the store or any out-of-band change. Returns `{"ok": true}`.
+Backfills vector embeddings for records that were stored without one. Returns `{"ok": true}`.
 
 ## init — set up the managed install
 
@@ -80,7 +80,7 @@ agent-memoryd init [flags]
   --import-project string  project for imported markdown/text records
 ```
 
-Creates the data root, `config.json`, `memories.jsonl`, git spool, managed global git hooks, logs dir, and `resources.json`. On macOS it also installs and starts the LaunchAgent (unless `--no-daemon`). Interactive runs prompt fresh-vs-import; scripts use `--fresh`/`--import`. `--fresh` and `--import` are mutually exclusive. See [bulk-import.md](bulk-import.md).
+Creates the data root, `config.json`, zvec store, git spool, managed global git hooks, logs dir, and `resources.json`. On macOS it also installs and starts the LaunchAgent (unless `--no-daemon`). Interactive runs prompt fresh-vs-import; scripts use `--fresh`/`--import`. `--fresh` and `--import` are mutually exclusive. See [bulk-import.md](bulk-import.md).
 
 Note: `--fresh`/`--import`/`--import-project` are recent source flags. If the installed binary lacks them (`init --help` shows only `--no-daemon`/`--path`), rebuild: `mise run build && mise run install-local`.
 
@@ -98,7 +98,7 @@ Prints `initialized`, system/MCP help, loaded `config`, `store` status (path, in
 agent-memoryd uninstall --yes
 ```
 
-Without `--yes` it prints what would be removed. With `--yes` it removes the managed `root` directory and the LaunchAgent plist, and unsets global `core.hooksPath` if it points at the managed hooks. **Deletes `memories.jsonl`** — back up first.
+Without `--yes` it prints what would be removed. With `--yes` it removes the managed `root` directory and the LaunchAgent plist, and unsets global `core.hooksPath` if it points at the managed hooks. This deletes the zvec store, so back up first.
 
 ## daemon / scan-once — ingest worker
 

@@ -40,17 +40,6 @@ func Init(path string) (Config, Manifest, error) {
 			return Config{}, Manifest{}, fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
-	if _, err := os.Stat(cfg.StorePath); os.IsNotExist(err) {
-		file, err := os.OpenFile(cfg.StorePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err != nil {
-			return Config{}, Manifest{}, fmt.Errorf("create memory store: %w", err)
-		}
-		if err := file.Close(); err != nil {
-			return Config{}, Manifest{}, fmt.Errorf("close memory store: %w", err)
-		}
-	} else if err != nil {
-		return Config{}, Manifest{}, fmt.Errorf("stat memory store: %w", err)
-	}
 	if err := writeDefaultTo(path, cfg); err != nil {
 		return Config{}, Manifest{}, err
 	}
@@ -82,6 +71,7 @@ func LoadManifest(root string) (Manifest, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return Manifest{}, fmt.Errorf("decode resource manifest: %w", err)
 	}
+	manifest.Resources = filterDeprecatedResources(manifest.Resources)
 	return withExists(manifest), nil
 }
 
@@ -139,7 +129,6 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "data root", Type: "directory", Path: cfg.Root, Managed: true},
 		{Name: "config file", Type: "config-file", Path: configPath, Managed: true},
 		{Name: "resource manifest", Type: "manifest-file", Path: ManifestPath(cfg.Root), Managed: true},
-		{Name: "memory source store", Type: "data-file", Path: cfg.StorePath, Managed: true},
 		{Name: "ingest state", Type: "data-file", Path: IngestStatePath(cfg.Root), Managed: true},
 		{Name: "zvec index", Type: "index-directory", Path: cfg.ZvecPath, Managed: true},
 		{Name: "store socket", Type: "socket", Path: filepath.Join(cfg.Root, "agent-memoryd.sock"), Managed: true},
@@ -151,6 +140,24 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "logs", Type: "directory", Path: filepath.Join(cfg.Root, "logs"), Managed: true},
 		{Name: "launchd plist", Type: "launchd-plist", Path: LaunchdPlistPath(), Managed: true},
 	}
+}
+
+func filterDeprecatedResources(resources []Resource) []Resource {
+	filtered := make([]Resource, 0, len(resources))
+	for _, resource := range resources {
+		if isDeprecatedResource(resource) {
+			continue
+		}
+		filtered = append(filtered, resource)
+	}
+	return filtered
+}
+
+func isDeprecatedResource(resource Resource) bool {
+	return resource.Managed &&
+		resource.Name == "memory source store" &&
+		resource.Type == "data-file" &&
+		filepath.Base(resource.Path) == "memories.jsonl"
 }
 
 func withExists(manifest Manifest) Manifest {

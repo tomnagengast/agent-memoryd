@@ -4,13 +4,13 @@ Table of contents
 - Record schema
 - Kinds
 - IDs and upsert
-- Store file and write semantics
-- Index and reindex
+- Store and write semantics
+- Search and reindex
 - Gotchas
 
 ## Record schema
 
-The source store is a JSONL file (`memories.jsonl`); one JSON object per line. Each record:
+The durable store is a zvec collection under `$AGENT_MEMORYD_HOME/zvec`. Each record:
 
 | field | notes |
 |---|---|
@@ -49,24 +49,25 @@ ID schemes used by the system:
 
 Pick a stable id namespace (e.g. `note:<slug>`) for any batch you might re-import or clean up.
 
-## Store file and write semantics
+## Store and write semantics
 
 Defined in `internal/memory/store.go`:
-- Every operation (`Add`, `Get`, `Forget`, `Search`, `List`, `RebuildIndex`, `Status`) reads the **entire file fresh** (`readLocked`) — there is no long-lived in-memory cache of records. So CLI, MCP, and daemon processes all see current disk state per call.
-- `Add`/`Forget` do read-modify-write: read all records, mutate the map by id, then write **all** records to `memories.jsonl.tmp` and atomically `rename` over the store. Records are sorted by `created_at` on write.
-- Concurrency: writes are serialized only by an in-process mutex. There is **no cross-process file lock**. Because every writer reads the full file first and writes the union, concurrent writers do not clobber each other's existing records — but two writes that read the same baseline and rename in a tight race can drop one side's single new record. Mitigations: prefer sequential writes; rely on idempotent stable ids and re-run to converge.
+- zvec takes an exclusive collection lock at open. The daemon is the only process that opens the store.
+- CLI commands and the stdio MCP server route `Add`, `Get`, `Forget`, `Search`, `List`, `RebuildIndex`, and `Status` over the daemon Unix socket.
+- The daemon serializes store access internally with a mutex, so concurrent CLI/MCP callers do not open or mutate zvec directly.
+- If the daemon is not running, store operations fail with a daemon-not-running error instead of falling back to a direct open.
 
-The store is the **rebuildable source of truth**. The retrieval index is derived data.
+zvec is the **durable source of truth**. A legacy `memories.jsonl` in the data root is imported once on first store open and renamed `memories.jsonl.migrated`.
 
-## Index and reindex
+## Search and reindex
 
-- `index_backend` is `lexical` by default (pure Go, no native deps). A binary built with the `zvec` tag (`mise run build-zvec`) uses vector retrieval.
-- The lexical index scores by fraction of query tokens found in `summary + body + kind + project` (tokenized on `[a-z0-9]`). `source` is **not** scored. Default limit 5, capped at 50.
-- `add`/`forget` keep the index in sync incrementally. After editing `memories.jsonl` by hand or via a process that bypassed the index, run `agent-memoryd reindex` to rebuild it from the store.
+- Search runs a full-text leg and, when an embedder is configured and usable, a vector leg. The result lists are blended in Go with `search_fts_weight` and `search_vector_weight`.
+- Embedding on write is best-effort. Records without vectors remain full-text searchable.
+- `reindex` backfills embeddings for records whose vector field is null or missing. It does not rebuild from a JSONL source.
 
 ## Gotchas
 
 - **Bullet-leading bodies break CLI add.** A body starting with `-` (markdown bullet) is parsed as a flag by cobra: `unknown shorthand flag: ' '`. Pass the body after a `--` sentinel and use `--flag=value` form. See [bulk-import.md](bulk-import.md).
 - **Omitting `id` in a loop duplicates.** Always pass a stable `id` for idempotent batches.
-- **`uninstall --yes` deletes the whole `root` directory** (including `memories.jsonl`). Keep `root` dedicated to agent-memoryd; back up `memories.jsonl` before destructive ops.
+- **`uninstall --yes` deletes the whole `root` directory** (including `zvec/`). Keep `root` dedicated to agent-memoryd; back up before destructive ops.
 - **CLI output is JSON** on stdout (pretty-printed). Pipe through `jq`/`python3` to extract fields.

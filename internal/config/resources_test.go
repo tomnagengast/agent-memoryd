@@ -20,7 +20,6 @@ func TestInitPersistsManagedResources(t *testing.T) {
 		cfg.Root,
 		ConfigPath(cfg.Root),
 		ManifestPath(cfg.Root),
-		cfg.StorePath,
 		cfg.SpoolDir,
 		filepath.Join(cfg.Root, "logs"),
 	}
@@ -40,6 +39,39 @@ func TestInitPersistsManagedResources(t *testing.T) {
 	}
 	if !foundGitHooks {
 		t.Fatalf("manifest resources missing managed git hooks: %#v", manifest.Resources)
+	}
+	if _, err := os.Stat(cfg.StorePath); !os.IsNotExist(err) {
+		t.Fatalf("legacy store path stat err = %v, want not exist", err)
+	}
+	for _, resource := range manifest.Resources {
+		if resource.Name == "memory source store" {
+			t.Fatalf("manifest includes deprecated JSONL store resource: %#v", manifest.Resources)
+		}
+	}
+}
+
+func TestLoadManifestFiltersDeprecatedMemorySourceStore(t *testing.T) {
+	root := t.TempDir()
+	manifest := Manifest{
+		Version: manifestVersion,
+		Resources: []Resource{
+			{Name: "data root", Type: "directory", Path: root, Managed: true},
+			{Name: "memory source store", Type: "data-file", Path: filepath.Join(root, "memories.jsonl"), Managed: true},
+		},
+	}
+	if err := WriteManifest(root, manifest); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	loaded, err := LoadManifest(root)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if len(loaded.Resources) != 1 {
+		t.Fatalf("resource count = %d, want 1: %#v", len(loaded.Resources), loaded.Resources)
+	}
+	if loaded.Resources[0].Name != "data root" {
+		t.Fatalf("remaining resource = %#v, want data root", loaded.Resources[0])
 	}
 }
 
