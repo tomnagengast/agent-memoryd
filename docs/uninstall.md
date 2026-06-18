@@ -45,10 +45,10 @@ If global `core.hooksPath` points at the managed hook directory, uninstall unset
   rm -rf ~/.local/lib/agent-memoryd
   ```
 
-- The installed binary at `~/.local/bin/agent-memoryd`. Remove it manually if desired:
+- The installed binary at `~/.local/bin/memoryd`. Remove it manually if desired:
 
   ```sh
-  rm ~/.local/bin/agent-memoryd
+  rm ~/.local/bin/memoryd
   ```
 
 - The daemon socket `$AGENT_MEMORYD_HOME/agent-memoryd.sock` is removed at daemon shutdown. If the daemon was killed and the socket remains, it is cleaned up automatically on next daemon start.

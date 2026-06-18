@@ -32,7 +32,7 @@ Config is JSON at `$AGENT_MEMORYD_HOME/config.json`; when `AGENT_MEMORYD_HOME` i
 
 ## The daemon
 
-`agent-memoryd daemon` is the resident worker; `scan-once` runs a single pass. It processes queued git events and scans `transcript_roots` every `poll_interval`. On macOS `init` runs it via launchd by default. Producers never store raw source material — they send it to the summarizer and store only the distilled result with a `source` pointer.
+`memoryd daemon` is the resident worker; `scan-once` runs a single pass. It processes queued git events and scans `transcript_roots` every `poll_interval`. On macOS `init` runs it via launchd by default. Producers never store raw source material — they send it to the summarizer and store only the distilled result with a `source` pointer.
 
 ## Transcript ingestion
 
@@ -48,12 +48,12 @@ The MCP `reflect` tool runs this same path on demand (session text, an explicit 
 Git hooks do **not** summarize inline; they enqueue an event and return fast:
 
 ```sh
-agent-memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
+memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
 ```
 
 The daemon later runs `git show --stat`, sends that plus existing summaries to the summarizer, and stores distilled memories with `repo@sha` in `source`. The event file is deleted after success.
 
-Managed hooks (`post-commit`, `post-merge`, `post-rewrite`) live under `<root>/git-hooks`. `init` sets global `core.hooksPath` to that dir **only if** no global hook path is already configured; existing global hooks are left untouched. The managed hooks first run any same-named repo-local hook, then enqueue. They need `agent-memoryd` on `PATH`.
+Managed hooks (`post-commit`, `post-merge`, `post-rewrite`) live under `<root>/git-hooks`. `init` sets global `core.hooksPath` to that dir **only if** no global hook path is already configured; existing global hooks are left untouched. The managed hooks first run any same-named repo-local hook, then enqueue. They need `memoryd` on `PATH`.
 
 ## Summarizer command
 
@@ -67,7 +67,7 @@ On failure the daemon logs the command failure and output byte counts, but **red
 
 ## launchd and logs
 
-`init` writes `~/Library/LaunchAgents/dev.agent-memoryd.plist`, then `launchctl bootstrap` + `kickstart`. The plist captures `AGENT_MEMORYD_HOME` and the installing shell's `PATH` so `codex` (or your summarizer) resolves under launchd. Logs go to `<root>/logs/agent-memoryd.{out,err}.log`. Render without installing: `agent-memoryd launchd-plist --bin /abs/path/to/agent-memoryd`.
+`init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, then `launchctl bootstrap` + `kickstart`. The plist captures `AGENT_MEMORYD_HOME` and the installing shell's `PATH` so `codex` (or your summarizer) resolves under launchd. Logs go to `<root>/logs/memoryd.{out,err}.log`. Render without installing: `memoryd launchd-plist --bin /abs/path/to/memoryd`.
 
 ## Privacy
 

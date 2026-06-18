@@ -5,7 +5,7 @@ Two ways to load an existing tree of markdown/text/JSONL notes into the store. P
 ## Option A — built-in `init --import` (simplest)
 
 ```sh
-agent-memoryd init --import ~/notes/agent --import-project notes
+memoryd init --import ~/notes/agent --import-project notes
 ```
 
 Handled by `internal/importmem`:
@@ -31,13 +31,13 @@ scripts/import_markdown_notes.sh ./docs --project myproj --dry-run
 
 Flags: `--project NAME`, `--id-prefix PFX` (default `note`), `--exclude DIR` (repeatable), `--dry-run`. Honors `AGENT_MEMORYD_BIN` to point at a specific binary.
 
-Behavior: imports `.md`/`.markdown`/`.txt`, one `kind=note` memory per file, body verbatim, stable id `<prefix>:<relpath-slug>` (idempotent re-runs upsert), summary from first heading/non-blank line, `source` = absolute path. Skips empty files and any `--exclude` dirs. After a real run it suggests `agent-memoryd reindex`.
+Behavior: imports `.md`/`.markdown`/`.txt`, one `kind=note` memory per file, body verbatim, stable id `<prefix>:<relpath-slug>` (idempotent re-runs upsert), summary from first heading/non-blank line, `source` = absolute path. Skips empty files and any `--exclude` dirs. After a real run it suggests `memoryd reindex`.
 
 For per-file project mapping (e.g. `maple*` → `maple`, applications → `job-search`), edit the `--project` assignment into a `case "$stem" in ... esac` block — straightforward to extend.
 
 ## The critical gotcha (CLI only)
 
-`agent-memoryd add` takes the body as a trailing positional arg. Markdown files frequently start with `- ` (a bullet), so cobra parses the body as a flag and fails:
+`memoryd add` takes the body as a trailing positional arg. Markdown files frequently start with `- ` (a bullet), so cobra parses the body as a flag and fails:
 
 ```
 unknown shorthand flag: ' ' in - 2026-06-06 ...
@@ -46,7 +46,7 @@ unknown shorthand flag: ' ' in - 2026-06-06 ...
 Fix, applied by the script: pass the body after a `--` sentinel and use `--flag=value` form.
 
 ```sh
-agent-memoryd add --id=note:x --kind=note --project=p --source=f --summary="t" -- "$(cat f)"
+memoryd add --id=note:x --kind=note --project=p --source=f --summary="t" -- "$(cat f)"
 ```
 
 MCP `add` passes the body as a JSON field and is immune — prefer it when scripting from an agent.
@@ -55,9 +55,9 @@ MCP `add` passes the body as a JSON field and is immune — prefer it when scrip
 
 ```sh
 # total records and store health
-agent-memoryd status
+memoryd status
 # spot-check retrieval
-agent-memoryd search --kind note "some topic"
+memoryd search --kind note "some topic"
 ```
 
 To undo a batch, `forget` each id (stable-id schemes make the id set predictable), then `reindex`.

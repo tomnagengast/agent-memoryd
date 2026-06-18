@@ -496,7 +496,7 @@ func loadStore() (config.Config, *memory.Store, error) {
 	return cfg, store, nil
 }
 
-var errDaemonNotRunning = errors.New("agent-memoryd daemon is not running")
+var errDaemonNotRunning = errors.New("memoryd daemon is not running")
 
 // dialOrOpen returns an RPC client for the daemon-owned store.  The daemon is
 // the only process that may open zvec directly.
@@ -508,7 +508,7 @@ func dialOrOpen() (config.Config, memory.API, error) {
 	if storerpc.Probe(cfg) {
 		return cfg, storerpc.NewClient(cfg), nil
 	}
-	return config.Config{}, nil, fmt.Errorf("%w; start it with `agent-memoryd daemon` or run `agent-memoryd init`", errDaemonNotRunning)
+	return config.Config{}, nil, fmt.Errorf("%w; start it with `memoryd daemon` or run `memoryd init`", errDaemonNotRunning)
 }
 
 func runStatus(ctx context.Context, cfg config.Config) error {
@@ -613,7 +613,7 @@ func runInitMemoryImport(ctx context.Context, store memory.API, opts initMemoryI
 
 func runInitMemoryImportWithoutDaemon(opts initMemoryImportOptions) (initMemoryImportStatus, error) {
 	if opts.ImportPath != "" {
-		return initMemoryImportStatus{}, fmt.Errorf("--import requires the daemon; remove --no-daemon or run agent-memoryd daemon first")
+		return initMemoryImportStatus{}, fmt.Errorf("--import requires the daemon; remove --no-daemon or run memoryd daemon first")
 	}
 	status := initMemoryImportStatus{Mode: "fresh", Skipped: "daemon disabled by --no-daemon"}
 	if opts.Fresh {

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Bulk-import a tree of markdown/text notes into agent-memoryd as kind=note
+# Bulk-import a tree of markdown/text notes into memoryd as kind=note
 # memories, one memory per file. Idempotent: stable ids derived from the file
 # path mean re-running upserts instead of duplicating.
 #
-# Why this exists alongside `agent-memoryd init --import`:
+# Why this exists alongside `memoryd init --import`:
 #   - `init --import` only runs during init and does NOT skip arbitrary dirs
 #     (only .git/node_modules/vendor/.cache/.DS_Store). This script runs against
 #     an already-initialized store, lets you exclude any dir, and lets you map a
 #     project per file.
 #
 # Critical gotcha this script handles:
-#   `agent-memoryd add` takes the body as a trailing positional arg. Markdown
+#   `memoryd add` takes the body as a trailing positional arg. Markdown
 #   files often start with "- " (a bullet); cobra then parses the body as a flag
 #   ("unknown shorthand flag: ' '"). Fix: pass the body after a `--` sentinel and
 #   use `--flag=value` form. Both are applied below.
@@ -25,7 +25,7 @@
 #
 set -u
 
-BIN="${AGENT_MEMORYD_BIN:-agent-memoryd}"
+BIN="${AGENT_MEMORYD_BIN:-memoryd}"
 NOTES_DIR=""
 PROJECT=""
 ID_PREFIX="note"
@@ -88,4 +88,4 @@ done < <(
 
 echo "================================"
 echo "ok=$ok skip=$skip fail=$fail"
-[ "$DRY_RUN" -eq 0 ] && [ "$fail" -eq 0 ] && echo "Tip: run 'agent-memoryd reindex' to refresh the retrieval index."
+[ "$DRY_RUN" -eq 0 ] && [ "$fail" -eq 0 ] && echo "Tip: run 'memoryd reindex' to refresh the retrieval index."
