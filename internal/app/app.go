@@ -541,6 +541,8 @@ type lockedStore struct {
 	release func() error
 }
 
+func (l *lockedStore) directOwner() {}
+
 func (l *lockedStore) Close() error {
 	// Optimize before closing so that records written in this session are
 	// durable and visible to FTS queries in future sessions. Best-effort:
@@ -554,6 +556,36 @@ func (l *lockedStore) Close() error {
 		return storeErr
 	}
 	return lockErr
+}
+
+type directOwnerAPI interface {
+	memory.API
+	directOwner()
+}
+
+func maybeServeOwnerRPC(ctx context.Context, cfg config.Config, store memory.API) (func(), error) {
+	if _, ok := store.(directOwnerAPI); !ok {
+		return func() {}, nil
+	}
+	srv := storerpc.NewServer(store)
+	ln, err := srv.Listen(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("start rpc server: %w", err)
+	}
+	sockPath := storerpc.SocketPath(cfg)
+	srvCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.Serve(srvCtx, ln)
+	}()
+	return func() {
+		cancel()
+		ln.Close()
+		os.Remove(sockPath)
+		if err := <-done; err != nil {
+			slog.Warn("owner rpc server stopped with error", "error", err)
+		}
+	}, nil
 }
 
 func runStatus(ctx context.Context, cfg config.Config) error {

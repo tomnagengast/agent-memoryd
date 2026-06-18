@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tomnagengast/agent-memoryd/internal/config"
+	"github.com/tomnagengast/agent-memoryd/internal/memory"
+	"github.com/tomnagengast/agent-memoryd/internal/storerpc"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
@@ -165,6 +168,46 @@ func TestLatestTranscriptReturnsNewestJSONL(t *testing.T) {
 	}
 }
 
+func TestMaybeServeOwnerRPCServesDirectOwner(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.Config{Root: shortSocketDir(t)}
+	store := directOwnerFakeStore{fakeMemoryAPI: newFakeMemoryAPI()}
+
+	stop, err := maybeServeOwnerRPC(ctx, cfg, store)
+	if err != nil {
+		t.Fatalf("maybeServeOwnerRPC: %v", err)
+	}
+	defer stop()
+
+	if !storerpc.Probe(cfg) {
+		t.Fatal("Probe returned false for direct owner RPC server")
+	}
+	client := storerpc.NewClient(cfg)
+	record, err := client.Add(ctx, memory.AddRequest{ID: "test:one", Body: "hello from rpc"})
+	if err != nil {
+		t.Fatalf("client add: %v", err)
+	}
+	got, err := client.Get(ctx, record.ID)
+	if err != nil {
+		t.Fatalf("client get: %v", err)
+	}
+	if got.Body != "hello from rpc" {
+		t.Fatalf("got body %q, want %q", got.Body, "hello from rpc")
+	}
+}
+
+func TestMaybeServeOwnerRPCSkipsNonOwner(t *testing.T) {
+	cfg := config.Config{Root: shortSocketDir(t)}
+	stop, err := maybeServeOwnerRPC(context.Background(), cfg, newFakeMemoryAPI())
+	if err != nil {
+		t.Fatalf("maybeServeOwnerRPC: %v", err)
+	}
+	defer stop()
+	if storerpc.Probe(cfg) {
+		t.Fatal("Probe returned true for non-owner store")
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	original := os.Stdout
 	read, write, err := os.Pipe()
@@ -193,4 +236,81 @@ func captureStdout(fn func() error) (string, error) {
 	default:
 		return buf.String(), nil
 	}
+}
+
+type fakeMemoryAPI struct {
+	records map[string]memory.Record
+}
+
+func newFakeMemoryAPI() *fakeMemoryAPI {
+	return &fakeMemoryAPI{records: make(map[string]memory.Record)}
+}
+
+func (f *fakeMemoryAPI) Add(_ context.Context, req memory.AddRequest) (memory.Record, error) {
+	record, err := memory.NewRecord(req)
+	if err != nil {
+		return memory.Record{}, err
+	}
+	f.records[record.ID] = record
+	return record, nil
+}
+
+func (f *fakeMemoryAPI) Get(_ context.Context, id string) (memory.Record, error) {
+	record, ok := f.records[id]
+	if !ok {
+		return memory.Record{}, memory.ErrNotFound
+	}
+	return record, nil
+}
+
+func (f *fakeMemoryAPI) Search(_ context.Context, _ memory.SearchRequest) ([]memory.SearchResult, error) {
+	return nil, nil
+}
+
+func (f *fakeMemoryAPI) Forget(_ context.Context, id string) error {
+	if _, ok := f.records[id]; !ok {
+		return memory.ErrNotFound
+	}
+	delete(f.records, id)
+	return nil
+}
+
+func (f *fakeMemoryAPI) List(_ context.Context) ([]memory.Record, error) {
+	records := make([]memory.Record, 0, len(f.records))
+	for _, record := range f.records {
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (f *fakeMemoryAPI) Status(_ context.Context) (memory.Status, error) {
+	return memory.Status{Path: "/fake", Backend: "fake", MemoryCount: len(f.records)}, nil
+}
+
+func (f *fakeMemoryAPI) Backfill(_ context.Context) (int, error) {
+	return 0, nil
+}
+
+func (f *fakeMemoryAPI) Optimize(_ context.Context) error {
+	return nil
+}
+
+func (f *fakeMemoryAPI) Close() error {
+	return nil
+}
+
+type directOwnerFakeStore struct {
+	*fakeMemoryAPI
+}
+
+func (directOwnerFakeStore) directOwner() {}
+
+func shortSocketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "amapp")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
 }
