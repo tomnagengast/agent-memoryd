@@ -16,7 +16,7 @@ mise run build
 ./memoryd status
 ```
 
-In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, and start the daemon service now. Use `./memoryd init --fresh` for a non-interactive fresh install, or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, configure Ollama semantic search, and start the daemon service now. Use `./memoryd init --fresh` for a non-interactive fresh install, or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
 
 `init` also installs managed global Git hooks via `git config --global core.hooksPath` when no global hook path is already configured. On macOS, it installs and starts the managed launchd daemon. Use `./memoryd init --no-daemon` if you only want to skip the daemon service.
 
@@ -64,7 +64,7 @@ Add and retrieve a memory from the CLI:
 
 ## Commands
 
-`init` creates the managed data root, config, zvec store, git spool, global Git hook scripts, logs directory, and resource manifest. It can start fresh or import existing memories from an agent-memoryd JSONL file or a markdown/text file tree. It configures Git's global `core.hooksPath` when that setting is unset or already points at the managed hook directory. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
+`init` creates the managed data root, config, zvec store, git spool, global Git hook scripts, logs directory, and resource manifest. It can start fresh or import existing memories from an agent-memoryd JSONL file or a markdown/text file tree, and interactive setup can configure Ollama semantic search. It configures Git's global `core.hooksPath` when that setting is unset or already points at the managed hook directory. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
 
 `status` prints system help, MCP tool help, loaded config, store status, launchd service status, and every resource persisted by `init`.
 
@@ -81,6 +81,8 @@ Add and retrieve a memory from the CLI:
 `enqueue-git` queues a git event for the daemon to summarize later.
 
 `launchd-plist` renders a macOS LaunchAgent plist to stdout for manual inspection or advanced installs.
+
+`embedder status`, `embedder test`, and `embedder setup ollama` configure and verify semantic-search embeddings.
 
 `reindex` backfills vector embeddings for memories that were stored without an embedder configured.
 

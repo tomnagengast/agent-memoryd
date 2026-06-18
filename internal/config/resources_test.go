@@ -104,6 +104,9 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	var disk struct {
 		SummarizerCommand  []string `json:"summarizer_command"`
 		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		EmbedderProvider   string   `json:"embedder_provider"`
+		EmbedderModel      string   `json:"embedder_model"`
+		EmbedderURL        string   `json:"embedder_url"`
 		MemoryContextLimit int      `json:"memory_context_limit"`
 	}
 	if err := json.Unmarshal(data, &disk); err != nil {
@@ -118,6 +121,9 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	if disk.MemoryContextLimit != 12 {
 		t.Fatalf("memory_context_limit = %d, want 12", disk.MemoryContextLimit)
 	}
+	if disk.EmbedderProvider != "disabled" || disk.EmbedderModel != "nomic-embed-text" || disk.EmbedderURL != "http://127.0.0.1:11434" {
+		t.Fatalf("embedder config = provider %q model %q url %q", disk.EmbedderProvider, disk.EmbedderModel, disk.EmbedderURL)
+	}
 
 	loaded, err := Load()
 	if err != nil {
@@ -128,6 +134,9 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	}
 	if loaded.MemoryContextLimit != 12 {
 		t.Fatalf("loaded memory context limit = %d, want 12", loaded.MemoryContextLimit)
+	}
+	if loaded.EmbedderProvider != "disabled" || loaded.EmbedderModel != "nomic-embed-text" || loaded.EmbedderURL != "http://127.0.0.1:11434" {
+		t.Fatalf("loaded embedder config = %#v", loaded)
 	}
 }
 

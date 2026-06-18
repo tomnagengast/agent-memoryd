@@ -24,7 +24,7 @@ This design means write safety for simultaneous writers comes from routing throu
 
 Agents should call `search` first. Search returns summaries and ids, which keeps most turns compact. The agent should call `get` only when a full memory is needed.
 
-Search is hybrid: it runs a full-text search (FTS) leg using zvec's `standard` tokenizer and a vector search leg using the configured embedder, then blends the two ranked lists in Go using configurable weights (`search_fts_weight`, `search_vector_weight`). When no embedder is configured or the embedder fails, only the FTS leg runs.
+Search is hybrid: it runs a full-text search (FTS) leg using zvec's `standard` tokenizer and a vector search leg using the configured embedder, then blends the two ranked lists in Go using configurable weights (`search_fts_weight`, `search_vector_weight`). When no embedder is configured or the embedder fails, only the FTS leg runs. The first-class embedder provider is Ollama via `/api/embed`; `embedder_command` remains as an escape hatch.
 
 Embedding on write is best-effort. If no embedder is configured or the embedding call fails, the vector field is stored as null and the record is still persisted and full-text searchable. `reindex` backfills embeddings for records with null vectors. `status` reports `pending_embedding` (records without vectors) and an `embedder` probe with `configured`, `ok`, and `dimension` fields.
 
@@ -36,7 +36,7 @@ Deletion uses `forget`. The record is removed from the store.
 
 ## Lifecycle Flow
 
-`init` creates the managed data root and records the resources it owns in `resources.json`. On a new interactive install it walks through fresh-vs-import setup, default transcript ingestion roots, and daemon startup. Scripted installs can use `--fresh`, `--import <path>`, or `--no-daemon`. After memory setup, `init` writes managed global Git hooks and sets global `core.hooksPath` when that value is unset or already points at the managed hook directory. On macOS it also writes the standard LaunchAgent plist, bootstraps it with launchd, and kickstarts the daemon unless skipped. `init --no-daemon` skips only that service setup.
+`init` creates the managed data root and records the resources it owns in `resources.json`. On a new interactive install it walks through fresh-vs-import setup, default transcript ingestion roots, Ollama semantic search, and daemon startup. Scripted installs can use `--fresh`, `--import <path>`, or `--no-daemon`. After memory setup, `init` writes managed global Git hooks and sets global `core.hooksPath` when that value is unset or already points at the managed hook directory. On macOS it also writes the standard LaunchAgent plist, bootstraps it with launchd, and kickstarts the daemon unless skipped. `init --no-daemon` skips only that service setup.
 
 `status` reads the manifest and reports command help, MCP tool help, config, store status, Git hook status, and whether every managed path exists.
 

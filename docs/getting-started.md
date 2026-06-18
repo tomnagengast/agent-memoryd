@@ -12,7 +12,7 @@ mise run build
 ./memoryd status
 ```
 
-In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, and start the daemon service now. For non-interactive installs, use `./memoryd init --fresh` to skip prompts or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, configure Ollama semantic search, and start the daemon service now. For non-interactive installs, use `./memoryd init --fresh` to skip prompts or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
 
 `init` installs managed global Git hooks when no other global hook path is configured. On macOS, it also installs and starts the managed launchd daemon. The daemon begins polling the configured transcript roots and git event spool immediately. Use `./memoryd init --no-daemon` to create files and Git hooks without starting the background service.
 
@@ -91,3 +91,16 @@ For a one-shot ingest pass without staying resident:
 ```
 
 The daemon waits until transcript files are idle before passing them to the summarizer. See [daemon.md](./daemon.md) for ingestion details.
+
+## Enable Semantic Search
+
+Full-text search works without an embedder. To add local semantic search with Ollama:
+
+```sh
+ollama pull nomic-embed-text
+./memoryd embedder setup ollama
+./memoryd embedder test
+./memoryd reindex
+```
+
+Restart the daemon after changing embedder config so new writes use the provider.

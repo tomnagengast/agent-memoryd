@@ -22,7 +22,10 @@ Config is JSON at `$MEMORYD_HOME/config.json`; when `MEMORYD_HOME` is unset the 
 | `transcript_roots` | `~/.claude/projects`, `~/.codex/sessions`, `~/.local/share/opencode` | dirs scanned for idle `.jsonl` transcripts |
 | `summarizer_command` | `codex exec --sandbox read-only --skip-git-repo-check --ephemeral -` | distills source material into memories |
 | `summarizer_timeout` | `5m0s` | bound per summarizer run |
-| `embedder_command` | empty | optional command that returns JSON float vectors |
+| `embedder_provider` | `disabled` | `disabled`, `command`, or `ollama` |
+| `embedder_model` | `nomic-embed-text` | model used by provider-backed embedders |
+| `embedder_url` | `http://127.0.0.1:11434` | Ollama base URL |
+| `embedder_command` | empty | command escape hatch that returns JSON float vectors |
 | `embedding_dim` | `768` | expected embedder vector dimension |
 | `memory_context_limit` | `12` | existing summaries sent to summarizer for dedup |
 | `poll_interval` | `10s` | daemon ingest cadence |

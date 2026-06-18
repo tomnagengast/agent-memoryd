@@ -96,7 +96,7 @@ Create the local data root, default config, zvec store, git spool, managed globa
 ./memoryd init
 ```
 
-In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, and start the daemon service now. Non-interactive installs should pass one of these flags:
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, configure Ollama semantic search, and start the daemon service now. Non-interactive installs should pass one of these flags:
 
 ```sh
 ./memoryd init --fresh
@@ -115,6 +115,17 @@ Use `--no-daemon` if you only want to create the local files and Git hooks witho
 ```sh
 ./memoryd init --no-daemon
 ```
+
+Interactive `init` can configure local semantic search with Ollama. The equivalent scripted setup is:
+
+```sh
+ollama pull nomic-embed-text
+./memoryd embedder setup ollama
+./memoryd embedder test
+./memoryd reindex
+```
+
+Restart the daemon after changing embedder config.
 
 By default the data root is:
 

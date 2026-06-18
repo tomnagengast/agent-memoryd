@@ -4,6 +4,7 @@ All commands print pretty JSON to stdout. The binary is `memoryd` (installed to 
 
 Table of contents
 - Memory commands: add, search, get, forget, reindex
+- Embedder commands: embedder status, embedder test, embedder setup
 - Lifecycle: init, status, uninstall
 - Daemon/ingest: daemon, scan-once, enqueue-git
 - Service: launchd-plist, mcp
@@ -69,6 +70,16 @@ memoryd reindex
 
 Backfills vector embeddings for records that were stored without one. Returns `{"ok": true}`.
 
+## embedder — configure semantic search
+
+```
+memoryd embedder status
+memoryd embedder test
+memoryd embedder setup ollama [--model nomic-embed-text] [--url http://127.0.0.1:11434] [--dimension 768]
+```
+
+`status` shows the configured provider without loading a model. `test` runs one probe embedding. `setup ollama` writes Ollama provider config, clears `embedder_command`, probes `/api/embed` when available, and prints next steps. After changing embedder config, restart the daemon and run `memoryd reindex` to backfill existing records.
+
 ## init — set up the managed install
 
 ```
@@ -80,7 +91,7 @@ memoryd init [flags]
   --import-project string  project for imported markdown/text records
 ```
 
-Creates the data root, `config.json`, zvec store, git spool, managed global git hooks, logs dir, and `resources.json`. On macOS it also installs and starts the LaunchAgent unless skipped. Interactive runs use a guided onboarding flow for fresh-vs-import setup, default transcript ingestion roots, and daemon startup; scripts use `--fresh`/`--import`/`--no-daemon`. `--fresh` and `--import` are mutually exclusive. See [bulk-import.md](bulk-import.md).
+Creates the data root, `config.json`, zvec store, git spool, managed global git hooks, logs dir, and `resources.json`. On macOS it also installs and starts the LaunchAgent unless skipped. Interactive runs use a guided onboarding flow for fresh-vs-import setup, default transcript ingestion roots, Ollama semantic search, and daemon startup; scripts use `--fresh`/`--import`/`--no-daemon`. `--fresh` and `--import` are mutually exclusive. See [bulk-import.md](bulk-import.md).
 
 Note: `--fresh`/`--import`/`--import-project` are recent source flags. If the installed binary lacks them (`init --help` shows only `--no-daemon`/`--path`), rebuild: `mise run build && mise run install-local`.
 

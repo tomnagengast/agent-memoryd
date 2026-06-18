@@ -42,6 +42,8 @@ From an agent, prefer the MCP tools: `search(query, project?, kind?, limit?)` â†
 
 Full flag/field details: [references/cli.md](references/cli.md) and [references/mcp.md](references/mcp.md).
 
+Enable local semantic search with `memoryd embedder setup ollama`, then restart the daemon and run `memoryd reindex`. `embedder_command` remains available as a custom escape hatch.
+
 ## Retrieval pattern (progressive disclosure)
 
 1. `search` for compact summaries + ids (keeps the turn small).

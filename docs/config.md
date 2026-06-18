@@ -12,7 +12,7 @@ When `MEMORYD_HOME` is unset, the root defaults to:
 ~/.local/share/memoryd
 ```
 
-`memoryd init` writes a config and a `resources.json` manifest in the same root. In an interactive terminal, it uses a guided onboarding flow for fresh-vs-import setup, default transcript ingestion roots, and whether to start the background daemon immediately.
+`memoryd init` writes a config and a `resources.json` manifest in the same root. In an interactive terminal, it uses a guided onboarding flow for fresh-vs-import setup, default transcript ingestion roots, Ollama semantic search, and whether to start the background daemon immediately.
 
 ## Example
 
@@ -35,6 +35,9 @@ When `MEMORYD_HOME` is unset, the root defaults to:
     "-"
   ],
   "summarizer_timeout": "5m0s",
+  "embedder_provider": "disabled",
+  "embedder_model": "nomic-embed-text",
+  "embedder_url": "http://127.0.0.1:11434",
   "embedder_command": [],
   "embedder_timeout": "30s",
   "embedding_dim": 768,
@@ -65,15 +68,21 @@ When `MEMORYD_HOME` is unset, the root defaults to:
 
 `summarizer_timeout` bounds one summarizer run.
 
-`embedder_command` is the external command used to embed memory text as a vector for semantic search. The command receives the text on stdin and must return a JSON array of float32 values. When empty or omitted, embedding is disabled and only full-text search is used. Example: `["my-embedder", "--dim", "768"]`.
+`embedder_provider` selects the semantic-search embedding provider. Supported values are `disabled`, `command`, and `ollama`. Existing configs with `embedder_command` continue to use the command provider even if this field is omitted.
+
+`embedder_model` is the model name for provider-backed embedders. For Ollama, the default is `nomic-embed-text`.
+
+`embedder_url` is the base URL for the Ollama provider. Default is `http://127.0.0.1:11434`; `memoryd` calls `/api/embed` under that URL.
+
+`embedder_command` is the external command escape hatch used to embed memory text as a vector for semantic search. The command receives the text on stdin and must return a JSON array of float32 values. Example: `["my-embedder", "--dim", "768"]`.
 
 `embedder_timeout` bounds one embedding call. Default is `30s`.
 
-`embedding_dim` is the expected dimension of vectors returned by `embedder_command`. Default is `768`. This must match the model used by your embedder. Changing this after the store is created requires a fresh store.
+`embedding_dim` is the expected dimension of vectors returned by the configured embedder. Default is `768`, matching Ollama `nomic-embed-text`. This must match the model used by your embedder. Changing this after the store is created requires a fresh store.
 
 `search_fts_weight` is the blend weight applied to full-text search results when both FTS and vector legs return results. Default is `0.5`. Increase this to favor keyword matching.
 
-`search_vector_weight` is the blend weight applied to vector search results. Default is `0.5`. Increase this to favor semantic similarity. Has no effect when `embedder_command` is not configured.
+`search_vector_weight` is the blend weight applied to vector search results. Default is `0.5`. Increase this to favor semantic similarity. Has no effect when no embedder is configured.
 
 `lock_timeout` is how long `init` waits for the daemon socket to become available after starting the managed service. Default is `5s`.
 
@@ -85,7 +94,7 @@ When `MEMORYD_HOME` is unset, the root defaults to:
 
 ## Import
 
-`init` can start fresh or import existing memories after the daemon starts. In an interactive terminal, the onboarding flow prompts for that choice along with transcript ingestion and daemon startup. In scripts, use `--fresh` or `--import <path>`. `--import` requires the daemon and cannot be combined with `--no-daemon`.
+`init` can start fresh or import existing memories after the daemon starts. In an interactive terminal, the onboarding flow prompts for that choice along with transcript ingestion, Ollama semantic search, and daemon startup. In scripts, use `--fresh` or `--import <path>`. `--import` requires the daemon and cannot be combined with `--no-daemon`.
 
 `--import` accepts an agent-memoryd JSONL file, a markdown file, a text file, or a directory containing markdown/text files. Use `--import-project <name>` to assign a project to imported markdown and text records. JSONL imports preserve each record's existing project.
 

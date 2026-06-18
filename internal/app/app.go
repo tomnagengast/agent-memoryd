@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,7 @@ func newRootCommand() *cobra.Command {
 		newForgetCommand(),
 		newExploreCommand(),
 		newReindexCommand(),
+		newEmbedderCommand(),
 		newMCPCommand(),
 		newDaemonCommand(),
 		newScanOnceCommand(),
@@ -173,6 +175,7 @@ func newInitCommand() *cobra.Command {
 				"service":       service,
 				"git_hooks":     gitHooks,
 				"memory_import": memoryImport,
+				"embedder":      initEmbedderStatus(cmd.Context(), cfg),
 				"onboarding":    onboarding.Status(),
 			})
 		},
@@ -357,6 +360,94 @@ func newReindexCommand() *cobra.Command {
 	}
 }
 
+func newEmbedderCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "embedder",
+		Short: "Configure and test semantic-search embeddings.",
+		Args:  cobra.NoArgs,
+	}
+	cmd.AddCommand(
+		newEmbedderStatusCommand(),
+		newEmbedderTestCommand(),
+		newEmbedderSetupCommand(),
+	)
+	return cmd
+}
+
+func newEmbedderStatusCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show configured embedder provider.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			return printJSON(embedderStatus(cfg))
+		},
+	}
+}
+
+func newEmbedderTestCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "test",
+		Short: "Run a probe embedding with the configured provider.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			result := probeEmbedder(cmd.Context(), cfg)
+			if !result.OK {
+				return fmt.Errorf("embedder test failed: %s", result.Error)
+			}
+			return printJSON(result)
+		},
+	}
+}
+
+func newEmbedderSetupCommand() *cobra.Command {
+	var model string
+	var url string
+	var dimension int
+	cmd := &cobra.Command{
+		Use:   "setup ollama",
+		Short: "Configure Ollama semantic search.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[0] != embedder.ProviderOllama {
+				return fmt.Errorf("unsupported embedder provider %q", args[0])
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			cfg.EmbedderProvider = embedder.ProviderOllama
+			cfg.EmbedderModel = model
+			cfg.EmbedderURL = url
+			cfg.EmbedderCommand = nil
+			cfg.EmbeddingDim = dimension
+			if err := config.Write("", cfg); err != nil {
+				return err
+			}
+			probe := probeEmbedder(cmd.Context(), cfg)
+			return printJSON(map[string]any{
+				"ok":         true,
+				"config":     config.ConfigPath(cfg.Root),
+				"embedder":   embedderStatus(cfg),
+				"probe":      probe,
+				"next_steps": embedderNextSteps(cfg, probe),
+			})
+		},
+	}
+	cmd.Flags().StringVar(&model, "model", "nomic-embed-text", "Ollama embedding model")
+	cmd.Flags().StringVar(&url, "url", "http://127.0.0.1:11434", "Ollama base URL")
+	cmd.Flags().IntVar(&dimension, "dimension", 768, "expected embedding dimension")
+	return cmd
+}
+
 func newMCPCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
@@ -480,12 +571,9 @@ func loadStore() (config.Config, *memory.Store, error) {
 	if err != nil {
 		return config.Config{}, nil, err
 	}
-	var emb embedder.Embedder = embedder.Disabled{}
-	if len(cfg.EmbedderCommand) > 0 {
-		emb = embedder.Command{
-			Argv:    cfg.EmbedderCommand,
-			Timeout: cfg.EmbedderTimeout,
-		}
+	emb, err := configuredEmbedder(cfg)
+	if err != nil {
+		return config.Config{}, nil, err
 	}
 	store, err := memory.Open(memory.OpenConfig{
 		ZvecPath:     cfg.ZvecPath,
@@ -499,6 +587,113 @@ func loadStore() (config.Config, *memory.Store, error) {
 		return config.Config{}, nil, err
 	}
 	return cfg, store, nil
+}
+
+func configuredEmbedder(cfg config.Config) (embedder.Embedder, error) {
+	return embedder.NewProvider(embedder.ProviderConfig{
+		Provider: cfg.EmbedderProvider,
+		Command:  cfg.EmbedderCommand,
+		Timeout:  cfg.EmbedderTimeout,
+		Model:    cfg.EmbedderModel,
+		URL:      cfg.EmbedderURL,
+	})
+}
+
+type embedderProbeResult struct {
+	OK        bool   `json:"ok"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model,omitempty"`
+	Dimension int    `json:"dimension,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+func embedderStatus(cfg config.Config) map[string]any {
+	provider := effectiveEmbedderProvider(cfg)
+	status := map[string]any{
+		"configured":    provider != embedder.ProviderDisabled,
+		"provider":      provider,
+		"embedding_dim": cfg.EmbeddingDim,
+	}
+	if provider == embedder.ProviderOllama {
+		status["model"] = cfg.EmbedderModel
+		status["url"] = cfg.EmbedderURL
+		status["ollama_cli"] = executableStatus("ollama")
+	}
+	if provider == embedder.ProviderCommand {
+		status["command"] = cfg.EmbedderCommand
+	}
+	return status
+}
+
+func effectiveEmbedderProvider(cfg config.Config) string {
+	return embedder.EffectiveProvider(embedder.ProviderConfig{
+		Provider: cfg.EmbedderProvider,
+		Command:  cfg.EmbedderCommand,
+	})
+}
+
+func probeEmbedder(ctx context.Context, cfg config.Config) embedderProbeResult {
+	provider := effectiveEmbedderProvider(cfg)
+	result := embedderProbeResult{
+		Provider: provider,
+		Model:    cfg.EmbedderModel,
+	}
+	emb, err := configuredEmbedder(cfg)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	vec, err := emb.Embed(ctx, "memoryd embedder probe")
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.OK = true
+	result.Dimension = len(vec)
+	return result
+}
+
+func executableStatus(name string) map[string]any {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return map[string]any{"found": false}
+	}
+	return map[string]any{"found": true, "path": path}
+}
+
+func embedderNextSteps(cfg config.Config, probe embedderProbeResult) []string {
+	if probe.OK {
+		return []string{
+			"restart the memoryd daemon so it reloads config",
+			"run `memoryd reindex` to backfill existing memories",
+		}
+	}
+	if effectiveEmbedderProvider(cfg) == embedder.ProviderOllama {
+		steps := []string{}
+		if _, err := exec.LookPath("ollama"); err != nil {
+			steps = append(steps, "install Ollama from https://ollama.com/download")
+		}
+		steps = append(steps,
+			fmt.Sprintf("run `ollama pull %s`", cfg.EmbedderModel),
+			"start Ollama if it is not already running",
+			"run `memoryd embedder test`",
+			"restart the memoryd daemon, then run `memoryd reindex`",
+		)
+		return steps
+	}
+	return []string{"configure an embedder provider, then run `memoryd embedder test`"}
+}
+
+func initEmbedderStatus(ctx context.Context, cfg config.Config) map[string]any {
+	status := embedderStatus(cfg)
+	if effectiveEmbedderProvider(cfg) == embedder.ProviderDisabled {
+		status["next_steps"] = []string{"run `memoryd embedder setup ollama` to enable semantic search later"}
+		return status
+	}
+	probe := probeEmbedder(ctx, cfg)
+	status["probe"] = probe
+	status["next_steps"] = embedderNextSteps(cfg, probe)
+	return status
 }
 
 var errDaemonNotRunning = errors.New("memoryd daemon is not running")
@@ -588,6 +783,7 @@ type initOnboarding struct {
 	ImportProject  string
 	StartDaemon    bool
 	TranscriptMode string
+	EmbedderMode   string
 }
 
 func defaultInitOnboarding(fresh bool, importPath, importProject string, noDaemon bool) initOnboarding {
@@ -604,6 +800,7 @@ func defaultInitOnboarding(fresh bool, importPath, importProject string, noDaemo
 		ImportProject:  importProject,
 		StartDaemon:    !noDaemon,
 		TranscriptMode: "default",
+		EmbedderMode:   embedder.ProviderDisabled,
 	}
 }
 
@@ -622,6 +819,13 @@ func shouldPromptInitOnboarding(cmd *cobra.Command) bool {
 func (o initOnboarding) Config(cfg config.Config) config.Config {
 	if o.TranscriptMode == "disabled" {
 		cfg.TranscriptRoots = []string{}
+	}
+	if o.EmbedderMode == embedder.ProviderOllama {
+		cfg.EmbedderProvider = embedder.ProviderOllama
+		cfg.EmbedderModel = "nomic-embed-text"
+		cfg.EmbedderURL = "http://127.0.0.1:11434"
+		cfg.EmbedderCommand = nil
+		cfg.EmbeddingDim = 768
 	}
 	return cfg
 }
@@ -644,6 +848,7 @@ func (o initOnboarding) Status() map[string]any {
 		"memory_mode":      memoryMode,
 		"start_daemon":     o.StartDaemon,
 		"transcript_roots": o.TranscriptMode,
+		"embedder":         o.EmbedderMode,
 	}
 }
 
@@ -688,6 +893,10 @@ func promptInitOnboarding(initial initOnboarding) (initOnboarding, error) {
 	if choice.MemoryMode == "prompt" {
 		choice.MemoryMode = "fresh"
 	}
+	configureSemantic := choice.EmbedderMode == embedder.ProviderOllama
+	if _, err := exec.LookPath("ollama"); err == nil {
+		configureSemantic = true
+	}
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("Memory setup").
@@ -706,6 +915,12 @@ func promptInitOnboarding(initial initOnboarding) (initOnboarding, error) {
 			).
 			Value(&choice.TranscriptMode),
 		huh.NewConfirm().
+			Title("Configure semantic search with Ollama/nomic-embed-text?").
+			Description("Uses local Ollama embeddings through http://127.0.0.1:11434/api/embed.").
+			Affirmative("Use Ollama").
+			Negative("Skip for now").
+			Value(&configureSemantic),
+		huh.NewConfirm().
 			Title("Start the background daemon now?").
 			Description("The daemon owns zvec and serves CLI/MCP store operations over the local socket.").
 			Affirmative("Start daemon").
@@ -715,6 +930,11 @@ func promptInitOnboarding(initial initOnboarding) (initOnboarding, error) {
 	applyHuhOptions(form)
 	if err := form.Run(); err != nil {
 		return initOnboarding{}, err
+	}
+	if configureSemantic {
+		choice.EmbedderMode = embedder.ProviderOllama
+	} else {
+		choice.EmbedderMode = embedder.ProviderDisabled
 	}
 	if choice.MemoryMode == "import" && !choice.StartDaemon {
 		return initOnboarding{}, fmt.Errorf("import requires the daemon; choose fresh setup or start the background daemon")
@@ -882,7 +1102,8 @@ var commandHelp = []helpItem{
 	{Name: "get", Summary: "fetch one full memory"},
 	{Name: "forget", Summary: "delete one memory"},
 	{Name: "explore", Summary: "explore memories in an interactive TUI"},
-	{Name: "reindex", Summary: "rebuild the configured retrieval index from the source store"},
+	{Name: "reindex", Summary: "backfill vector embeddings for memories missing them"},
+	{Name: "embedder", Summary: "configure and test semantic-search embeddings"},
 }
 
 var mcpToolHelp = []helpItem{

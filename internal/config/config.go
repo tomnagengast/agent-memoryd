@@ -17,6 +17,9 @@ type Config struct {
 	TranscriptRoots    []string      `json:"transcript_roots"`
 	SummarizerCommand  []string      `json:"summarizer_command"`
 	SummarizerTimeout  time.Duration `json:"summarizer_timeout"`
+	EmbedderProvider   string        `json:"embedder_provider"`
+	EmbedderModel      string        `json:"embedder_model"`
+	EmbedderURL        string        `json:"embedder_url"`
 	EmbedderCommand    []string      `json:"embedder_command"`
 	EmbedderTimeout    time.Duration `json:"embedder_timeout"`
 	EmbeddingDim       int           `json:"embedding_dim"`
@@ -37,6 +40,9 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		TranscriptRoots    []string `json:"transcript_roots"`
 		SummarizerCommand  []string `json:"summarizer_command"`
 		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		EmbedderProvider   string   `json:"embedder_provider"`
+		EmbedderModel      string   `json:"embedder_model"`
+		EmbedderURL        string   `json:"embedder_url"`
 		EmbedderCommand    []string `json:"embedder_command"`
 		EmbedderTimeout    string   `json:"embedder_timeout"`
 		EmbeddingDim       int      `json:"embedding_dim"`
@@ -55,6 +61,9 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		TranscriptRoots:    c.TranscriptRoots,
 		SummarizerCommand:  c.SummarizerCommand,
 		SummarizerTimeout:  c.SummarizerTimeout.String(),
+		EmbedderProvider:   c.EmbedderProvider,
+		EmbedderModel:      c.EmbedderModel,
+		EmbedderURL:        c.EmbedderURL,
 		EmbedderCommand:    c.EmbedderCommand,
 		EmbedderTimeout:    c.EmbedderTimeout.String(),
 		EmbeddingDim:       c.EmbeddingDim,
@@ -89,6 +98,9 @@ func Default() Config {
 			"-",
 		},
 		SummarizerTimeout:  5 * time.Minute,
+		EmbedderProvider:   "disabled",
+		EmbedderModel:      "nomic-embed-text",
+		EmbedderURL:        "http://127.0.0.1:11434",
 		EmbedderCommand:    nil,
 		EmbedderTimeout:    30 * time.Second,
 		EmbeddingDim:       768,
@@ -119,6 +131,9 @@ func Load() (Config, error) {
 		TranscriptRoots    []string `json:"transcript_roots"`
 		SummarizerCommand  []string `json:"summarizer_command"`
 		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		EmbedderProvider   string   `json:"embedder_provider"`
+		EmbedderModel      string   `json:"embedder_model"`
+		EmbedderURL        string   `json:"embedder_url"`
 		EmbedderCommand    []string `json:"embedder_command"`
 		EmbedderTimeout    string   `json:"embedder_timeout"`
 		EmbeddingDim       int      `json:"embedding_dim"`
@@ -159,6 +174,15 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("parse summarizer_timeout: %w", err)
 		}
 		cfg.SummarizerTimeout = d
+	}
+	if disk.EmbedderProvider != "" {
+		cfg.EmbedderProvider = disk.EmbedderProvider
+	}
+	if disk.EmbedderModel != "" {
+		cfg.EmbedderModel = disk.EmbedderModel
+	}
+	if disk.EmbedderURL != "" {
+		cfg.EmbedderURL = disk.EmbedderURL
 	}
 	if disk.EmbedderCommand != nil {
 		cfg.EmbedderCommand = append([]string(nil), disk.EmbedderCommand...)
@@ -208,6 +232,13 @@ func Load() (Config, error) {
 
 func WriteDefault(path string) error {
 	cfg := Default()
+	if path == "" {
+		path = ConfigPath(cfg.Root)
+	}
+	return writeDefaultTo(path, cfg)
+}
+
+func Write(path string, cfg Config) error {
 	if path == "" {
 		path = ConfigPath(cfg.Root)
 	}

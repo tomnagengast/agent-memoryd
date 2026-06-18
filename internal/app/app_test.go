@@ -3,8 +3,11 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tomnagengast/agent-memoryd/internal/config"
+	"github.com/tomnagengast/agent-memoryd/internal/embedder"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/storerpc"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
@@ -240,6 +244,60 @@ func TestInitOnboardingCanDisableTranscriptRoots(t *testing.T) {
 	status := choice.Status()
 	if status["transcript_roots"] != "disabled" {
 		t.Fatalf("status = %#v, want disabled transcript mode", status)
+	}
+}
+
+func TestInitOnboardingCanConfigureOllama(t *testing.T) {
+	choice := defaultInitOnboarding(false, "", "", false)
+	choice.EmbedderMode = embedder.ProviderOllama
+	cfg := choice.Config(config.Default())
+	if cfg.EmbedderProvider != embedder.ProviderOllama {
+		t.Fatalf("embedder provider = %q, want ollama", cfg.EmbedderProvider)
+	}
+	if cfg.EmbedderModel != "nomic-embed-text" || cfg.EmbedderURL != "http://127.0.0.1:11434" {
+		t.Fatalf("embedder config = %#v", cfg)
+	}
+	if len(cfg.EmbedderCommand) != 0 {
+		t.Fatalf("embedder command = %#v, want cleared", cfg.EmbedderCommand)
+	}
+}
+
+func TestRunEmbedderSetupOllamaWritesConfig(t *testing.T) {
+	root := shortSocketDir(t)
+	t.Setenv("MEMORYD_HOME", root)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/embed" {
+			t.Fatalf("path = %q, want /api/embed", r.URL.Path)
+		}
+		io.WriteString(w, `{"embeddings":[[0.1,0.2,0.3]]}`)
+	}))
+	defer srv.Close()
+
+	out, err := captureStdout(func() error {
+		return Run([]string{"embedder", "setup", "ollama", "--url", srv.URL, "--model", "test-embed", "--dimension", "3"})
+	})
+	if err != nil {
+		t.Fatalf("embedder setup: %v", err)
+	}
+	var result struct {
+		OK    bool `json:"ok"`
+		Probe struct {
+			OK        bool `json:"ok"`
+			Dimension int  `json:"dimension"`
+		} `json:"probe"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if !result.OK || !result.Probe.OK || result.Probe.Dimension != 3 {
+		t.Fatalf("setup output = %#v", result)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.EmbedderProvider != embedder.ProviderOllama || cfg.EmbedderModel != "test-embed" || cfg.EmbedderURL != srv.URL || cfg.EmbeddingDim != 3 {
+		t.Fatalf("saved config = %#v", cfg)
 	}
 }
 
