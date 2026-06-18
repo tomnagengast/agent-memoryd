@@ -75,7 +75,7 @@ If the summarizer command fails, daemon logs include the command failure and out
 `init` writes the managed LaunchAgent to:
 
 ```text
-~/Library/LaunchAgents/dev.memoryd.plist
+~/Library/LaunchAgents/dev.agent-memoryd.plist
 ```
 
 It then runs `launchctl bootstrap` and `launchctl kickstart` so the daemon is up immediately.

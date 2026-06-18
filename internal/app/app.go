@@ -126,7 +126,7 @@ func newInitCommand() *cobra.Command {
 			var service any = map[string]any{"started": false, "skipped": "disabled by --no-daemon"}
 			if !noDaemon {
 				status, err := launchd.InstallAndStart(launchd.Config{
-					Label:     launchd.DefaultLabel,
+					Label:     "dev.agent-memoryd",
 					Binary:    exe,
 					Root:      cfg.Root,
 					LogDir:    filepath.Join(cfg.Root, "logs"),
@@ -438,7 +438,7 @@ func newLaunchdPlistCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&bin, "bin", "", "memoryd binary path")
-	cmd.Flags().StringVar(&label, "label", launchd.DefaultLabel, "launchd label")
+	cmd.Flags().StringVar(&label, "label", "dev.agent-memoryd", "launchd label")
 	return cmd
 }
 
@@ -471,7 +471,7 @@ func runStatus(ctx context.Context, cfg config.Config) error {
 		"config":      cfg,
 		"store":       status,
 		"service": launchd.CurrentStatus(launchd.Config{
-			Label:     launchd.DefaultLabel,
+			Label:     "dev.agent-memoryd",
 			PlistPath: config.LaunchdPlistPath(),
 		}),
 		"git_hooks": githooks.CurrentStatus(cfg),
