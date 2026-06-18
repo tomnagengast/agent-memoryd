@@ -1,11 +1,11 @@
 # Uninstall
 
-`memoryd init` writes a resource manifest so the system can show and remove the resources it owns. On macOS, `init` also starts the managed launchd service.
+`agent-memoryd init` writes a resource manifest so the system can show and remove the resources it owns. On macOS, `init` also starts the managed launchd service.
 
 Inspect the current system:
 
 ```sh
-memoryd status
+agent-memoryd status
 ```
 
 `status` prints the loaded config, store status, command help, MCP tool help, Git hook status, and all resources tracked in `resources.json`.
@@ -15,7 +15,7 @@ memoryd status
 Run `uninstall` without `--yes` to see the managed resources without deleting them:
 
 ```sh
-memoryd uninstall
+agent-memoryd uninstall
 ```
 
 The command returns JSON with `needs_yes: true`.
@@ -25,7 +25,7 @@ The command returns JSON with `needs_yes: true`.
 Remove managed resources:
 
 ```sh
-memoryd uninstall --yes
+agent-memoryd uninstall --yes
 ```
 
 This removes the configured data root, including the config file, resource manifest, `memories.jsonl`, ingest state, zvec index directory, git spool, managed global Git hook scripts, and logs.

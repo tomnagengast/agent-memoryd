@@ -132,27 +132,27 @@ run_legacy_hook() {
   fi
 }
 
-find_memoryd() {
-  if command -v memoryd >/dev/null 2>&1; then
-    command -v memoryd
+find_agent_memoryd() {
+  if command -v agent-memoryd >/dev/null 2>&1; then
+    command -v agent-memoryd
     return 0
   fi
   if [ -n "$installed_bin" ] && [ -x "$installed_bin" ]; then
     printf '%%s\n' "$installed_bin"
     return 0
   fi
-  if [ -n "$HOME" ] && [ -x "$HOME/.local/bin/memoryd" ]; then
-    printf '%%s\n' "$HOME/.local/bin/memoryd"
+  if [ -n "$HOME" ] && [ -x "$HOME/.local/bin/agent-memoryd" ]; then
+    printf '%%s\n' "$HOME/.local/bin/agent-memoryd"
     return 0
   fi
   return 1
 }
 
-run_memoryd() {
-  memoryd_bin="$(find_memoryd)" || return 0
+run_agent_memoryd() {
+  agent_memoryd_bin="$(find_agent_memoryd)" || return 0
   repo="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
   sha="$(git rev-parse HEAD 2>/dev/null)" || return 0
-  "$memoryd_bin" enqueue-git --repo "$repo" --sha "$sha" >/dev/null 2>&1 || true
+  "$agent_memoryd_bin" enqueue-git --repo "$repo" --sha "$sha" >/dev/null 2>&1 || true
 }
 
 run_legacy_hook "$@"
@@ -160,7 +160,7 @@ legacy_status=$?
 if [ "$legacy_status" -ne 0 ]; then
   exit "$legacy_status"
 fi
-run_memoryd
+run_agent_memoryd
 exit 0
 `, shellQuote(name), shellQuote(binary))
 }

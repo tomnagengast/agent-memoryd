@@ -23,5 +23,4 @@ lib/
 # Generated local data
 .agent-memoryd/
 /agent-memoryd
-/memoryd
 coverage.out

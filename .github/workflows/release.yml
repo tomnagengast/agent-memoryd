@@ -41,8 +41,8 @@ jobs:
             name="agent-memoryd_${version}_${goos}_${goarch}"
             mkdir -p "dist/${name}"
             GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 \
-              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/memoryd" ./cmd/agent-memoryd
-            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" memoryd
+              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}/agent-memoryd" ./cmd/agent-memoryd
+            tar -C "dist/${name}" -czf "dist/${name}.tar.gz" agent-memoryd
             rm -rf "dist/${name}"
           done
 

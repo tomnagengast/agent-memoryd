@@ -1,10 +1,10 @@
 # MCP
 
-`memoryd mcp` runs the agent-memoryd stdio MCP server. Configure your MCP client to launch the binary with the `mcp` argument.
+`agent-memoryd mcp` runs a stdio MCP server. Configure your MCP client to launch the binary with the `mcp` argument.
 
 ```json
 {
-  "command": "/absolute/path/to/memoryd",
+  "command": "/absolute/path/to/agent-memoryd",
   "args": ["mcp"],
   "env": {
     "AGENT_MEMORYD_HOME": "/Users/you/.local/share/agent-memoryd"
@@ -95,7 +95,7 @@ Input:
 }
 ```
 
-If `id` is omitted, `memoryd` generates one. If `summary` is omitted, it is derived from the body.
+If `id` is omitted, `agent-memoryd` generates one. If `summary` is omitted, it is derived from the body.
 
 ### forget
 

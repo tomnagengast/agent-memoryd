@@ -29,4 +29,4 @@ jobs:
         run: go test ./...
 
       - name: Build
-        run: go build -o ./memoryd ./cmd/agent-memoryd
+        run: go build -o ./agent-memoryd ./cmd/agent-memoryd

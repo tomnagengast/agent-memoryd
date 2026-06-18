@@ -135,7 +135,7 @@ func runLaunchctl(args ...string) error {
 }
 
 func daemonProcessRunning() bool {
-	return exec.Command("pgrep", "-f", "memoryd daemon").Run() == nil
+	return exec.Command("pgrep", "-f", "agent-memoryd daemon").Run() == nil
 }
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -161,9 +161,9 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <string>{{ .Path }}</string>
   </dict>
   <key>StandardOutPath</key>
-  <string>{{ .LogDir }}/memoryd.out.log</string>
+  <string>{{ .LogDir }}/agent-memoryd.out.log</string>
   <key>StandardErrorPath</key>
-  <string>{{ .LogDir }}/memoryd.err.log</string>
+  <string>{{ .LogDir }}/agent-memoryd.err.log</string>
 </dict>
 </plist>
 `

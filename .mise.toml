@@ -10,14 +10,14 @@ description = "Run Go tests"
 run = "go test ./..."
 
 [tasks.build]
-description = "Build the memoryd binary"
+description = "Build the agent-memoryd binary"
 run = '''
 version="${AGENT_MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
 date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 go build \
   -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
-  -o ./memoryd \
+  -o ./agent-memoryd \
   ./cmd/agent-memoryd
 '''
 
@@ -38,18 +38,18 @@ CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,$(pwd)/lib/${
 CGO_ENABLED=1 go build \
   -tags zvec \
   -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
-  -o ./memoryd \
+  -o ./agent-memoryd \
   ./cmd/agent-memoryd
 '''
 
 [tasks.install-local]
-description = "Atomically install ./memoryd to ~/.local/bin"
+description = "Atomically install ./agent-memoryd to ~/.local/bin"
 run = '''
 mkdir -p "${HOME}/.local/bin"
-tmp="${HOME}/.local/bin/memoryd.new"
-cp ./memoryd "${tmp}"
+tmp="${HOME}/.local/bin/agent-memoryd.new"
+cp ./agent-memoryd "${tmp}"
 chmod 755 "${tmp}"
-mv "${tmp}" "${HOME}/.local/bin/memoryd"
+mv "${tmp}" "${HOME}/.local/bin/agent-memoryd"
 '''
 
 [tasks.zvec-libs]

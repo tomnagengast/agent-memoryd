@@ -1,6 +1,6 @@
 # zvec
 
-The default `memoryd` build uses a pure-Go lexical index. That keeps the contributor loop simple and avoids native dependencies for ordinary tests.
+The default `agent-memoryd` build uses a pure-Go lexical index. That keeps the contributor loop simple and avoids native dependencies for ordinary tests.
 
 The production retrieval backend uses `github.com/zvec-ai/zvec-go` behind the `zvec` build tag.
 
@@ -18,7 +18,7 @@ Build the zvec-enabled binary:
 mise run build-zvec
 ```
 
-`build-zvec` sets cgo include and linker flags for the downloaded libraries and writes the binary to `./memoryd`.
+`build-zvec` sets cgo include and linker flags for the downloaded libraries and writes the binary to `./agent-memoryd`.
 
 ## Configure
 
@@ -37,7 +37,7 @@ Keep the rest of the generated config fields unless you are intentionally moving
 The zvec index is derived from `memories.jsonl`. Rebuild it whenever switching backends or after changing index storage:
 
 ```sh
-./memoryd reindex
+./agent-memoryd reindex
 ```
 
 ## Native Library Notes
