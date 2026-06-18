@@ -30,7 +30,7 @@ memoryd uninstall --yes
 
 This removes the configured data root, including the config file, resource manifest, `memories.jsonl`, ingest state, zvec index directory, git spool, managed global Git hook scripts, and logs.
 
-If `~/Library/LaunchAgents/dev.agent-memoryd.plist` exists and is tracked by the manifest, uninstall also unloads it with `launchctl bootout` and removes the plist.
+If `~/Library/LaunchAgents/dev.memoryd.plist` exists and is tracked by the manifest, uninstall also unloads it with `launchctl bootout` and removes the plist.
 
 If global `core.hooksPath` points at the managed hook directory, uninstall unsets that Git config value before removing the data root.
 
