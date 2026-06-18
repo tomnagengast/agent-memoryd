@@ -75,7 +75,7 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `search_vector_weight` is the blend weight applied to vector search results. Default is `0.5`. Increase this to favor semantic similarity. Has no effect when `embedder_command` is not configured.
 
-`lock_timeout` is how long a direct store open waits to acquire the advisory file lock before returning a busy error. Default is `5s`. This applies only when no daemon is running; when the daemon is up, requests route through the socket without waiting on the file lock.
+`lock_timeout` is how long `init` waits for the daemon socket to become available after starting the managed service. Default is `5s`.
 
 `memory_context_limit` controls how many existing memory summaries are passed to the summarizer so it can avoid duplicating old memories and identify genuinely new facts, preferences, instructions, or decisions.
 
@@ -85,7 +85,7 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 ## Import
 
-`init` can start fresh or import existing memories before the daemon starts. In an interactive terminal it prompts for that choice. In scripts, use `--fresh` or `--import <path>`.
+`init` can start fresh or import existing memories after the daemon starts. In an interactive terminal it prompts for that choice. In scripts, use `--fresh` or `--import <path>`. `--import` requires the daemon and cannot be combined with `--no-daemon`.
 
 `--import` accepts an agent-memoryd JSONL file, a markdown file, a text file, or a directory containing markdown/text files. Use `--import-project <name>` to assign a project to imported markdown and text records. JSONL imports preserve each record's existing project.
 

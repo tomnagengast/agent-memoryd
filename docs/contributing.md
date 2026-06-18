@@ -47,8 +47,6 @@ The configurable summarization adapter lives in `internal/summarizer`.
 
 The configurable embedding adapter lives in `internal/embedder`.
 
-The advisory file lock helper lives in `internal/flock`.
-
 The IPC server and client (daemon socket) live in `internal/storerpc`.
 
 ## Build Details

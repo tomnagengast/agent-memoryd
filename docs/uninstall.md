@@ -28,7 +28,7 @@ Remove managed resources:
 agent-memoryd uninstall --yes
 ```
 
-This removes the configured data root, including the config file, resource manifest, zvec store directory, advisory lock file, ingest state, git spool, managed global Git hook scripts, and logs.
+This removes the configured data root, including the config file, resource manifest, zvec store directory, ingest state, git spool, managed global Git hook scripts, and logs.
 
 If `~/Library/LaunchAgents/dev.agent-memoryd.plist` exists and is tracked by the manifest, uninstall also unloads it with `launchctl bootout` and removes the plist.
 

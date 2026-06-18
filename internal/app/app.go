@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
@@ -18,7 +19,6 @@ import (
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
 	"github.com/tomnagengast/agent-memoryd/internal/embedder"
 	"github.com/tomnagengast/agent-memoryd/internal/explore"
-	"github.com/tomnagengast/agent-memoryd/internal/flock"
 	"github.com/tomnagengast/agent-memoryd/internal/githooks"
 	"github.com/tomnagengast/agent-memoryd/internal/importmem"
 	"github.com/tomnagengast/agent-memoryd/internal/launchd"
@@ -104,19 +104,6 @@ func newInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, store, err := dialOrOpen()
-			if err != nil {
-				return err
-			}
-			defer store.Close()
-			memoryImport, err := runInitMemoryImport(cmd.Context(), store, initMemoryImportOptions{
-				Fresh:         fresh,
-				ImportPath:    importPath,
-				ImportProject: importProject,
-			})
-			if err != nil {
-				return err
-			}
 			exe, err := os.Executable()
 			if err != nil {
 				return err
@@ -129,8 +116,19 @@ func newInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			memoryOpts := initMemoryImportOptions{
+				Fresh:         fresh,
+				ImportPath:    importPath,
+				ImportProject: importProject,
+			}
+			var memoryImport initMemoryImportStatus
 			var service any = map[string]any{"started": false, "skipped": "disabled by --no-daemon"}
-			if !noDaemon {
+			if noDaemon {
+				memoryImport, err = runInitMemoryImportWithoutDaemon(memoryOpts)
+				if err != nil {
+					return err
+				}
+			} else {
 				status, err := launchd.InstallAndStart(launchd.Config{
 					Label:     "dev.agent-memoryd",
 					Binary:    exe,
@@ -142,6 +140,18 @@ func newInitCommand() *cobra.Command {
 					return err
 				}
 				service = status
+				if err := waitForDaemon(cmd.Context(), cfg); err != nil {
+					return err
+				}
+				_, store, err := dialOrOpen()
+				if err != nil {
+					return err
+				}
+				defer store.Close()
+				memoryImport, err = runInitMemoryImport(cmd.Context(), store, memoryOpts)
+				if err != nil {
+					return err
+				}
 				manifest, err = config.LoadManifest(cfg.Root)
 				if err != nil {
 					return err
@@ -486,11 +496,10 @@ func loadStore() (config.Config, *memory.Store, error) {
 	return cfg, store, nil
 }
 
-// dialOrOpen returns a memory.API for the current config.  When a daemon is
-// running (socket present), it returns an RPC client.  Otherwise it opens the
-// zvec collection directly under an advisory file lock so concurrent
-// daemon-less invocations serialize rather than colliding on zvec's exclusive
-// lock.
+var errDaemonNotRunning = errors.New("agent-memoryd daemon is not running")
+
+// dialOrOpen returns an RPC client for the daemon-owned store.  The daemon is
+// the only process that may open zvec directly.
 func dialOrOpen() (config.Config, memory.API, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -499,93 +508,7 @@ func dialOrOpen() (config.Config, memory.API, error) {
 	if storerpc.Probe(cfg) {
 		return cfg, storerpc.NewClient(cfg), nil
 	}
-	// Direct-owner path: acquire advisory flock first so concurrent daemon-less
-	// invocations wait instead of both trying to open the zvec collection.
-	// Ensure the data root exists so the lock file can be created.
-	if mkErr := os.MkdirAll(cfg.Root, 0o755); mkErr != nil {
-		return config.Config{}, nil, fmt.Errorf("create data root: %w", mkErr)
-	}
-	locker := &flock.FileLocker{
-		Path:        cfg.ZvecPath + ".lock",
-		LockTimeout: cfg.LockTimeout,
-	}
-	release, err := locker.Acquire(context.Background())
-	if err != nil {
-		return config.Config{}, nil, fmt.Errorf("acquire store lock: %w", err)
-	}
-	var emb embedder.Embedder = embedder.Disabled{}
-	if len(cfg.EmbedderCommand) > 0 {
-		emb = embedder.Command{
-			Argv:    cfg.EmbedderCommand,
-			Timeout: cfg.EmbedderTimeout,
-		}
-	}
-	store, err := memory.Open(memory.OpenConfig{
-		ZvecPath:     cfg.ZvecPath,
-		EmbeddingDim: cfg.EmbeddingDim,
-		LockTimeout:  cfg.LockTimeout,
-		FTSWeight:    cfg.SearchFTSWeight,
-		VectorWeight: cfg.SearchVectorWeight,
-		Embedder:     emb,
-	})
-	if err != nil {
-		release() //nolint:errcheck
-		return config.Config{}, nil, err
-	}
-	return cfg, &lockedStore{Store: store, release: release}, nil
-}
-
-// lockedStore wraps *memory.Store and releases the advisory file lock on Close.
-type lockedStore struct {
-	*memory.Store
-	release func() error
-}
-
-func (l *lockedStore) directOwner() {}
-
-func (l *lockedStore) Close() error {
-	// Optimize before closing so that records written in this session are
-	// durable and visible to FTS queries in future sessions. Best-effort:
-	// a failure here is logged but does not prevent the close or lock release.
-	if optErr := l.Store.Optimize(context.Background()); optErr != nil {
-		slog.Warn("lockedStore: optimize before close failed", "error", optErr)
-	}
-	storeErr := l.Store.Close()
-	lockErr := l.release()
-	if storeErr != nil {
-		return storeErr
-	}
-	return lockErr
-}
-
-type directOwnerAPI interface {
-	memory.API
-	directOwner()
-}
-
-func maybeServeOwnerRPC(ctx context.Context, cfg config.Config, store memory.API) (func(), error) {
-	if _, ok := store.(directOwnerAPI); !ok {
-		return func() {}, nil
-	}
-	srv := storerpc.NewServer(store)
-	ln, err := srv.Listen(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("start rpc server: %w", err)
-	}
-	sockPath := storerpc.SocketPath(cfg)
-	srvCtx, cancel := context.WithCancel(ctx)
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.Serve(srvCtx, ln)
-	}()
-	return func() {
-		cancel()
-		ln.Close()
-		os.Remove(sockPath)
-		if err := <-done; err != nil {
-			slog.Warn("owner rpc server stopped with error", "error", err)
-		}
-	}, nil
+	return config.Config{}, nil, fmt.Errorf("%w; start it with `agent-memoryd daemon` or run `agent-memoryd init`", errDaemonNotRunning)
 }
 
 func runStatus(ctx context.Context, cfg config.Config) error {
@@ -688,6 +611,17 @@ func runInitMemoryImport(ctx context.Context, store memory.API, opts initMemoryI
 	return initMemoryImportStatus{Mode: "import", Result: &result}, nil
 }
 
+func runInitMemoryImportWithoutDaemon(opts initMemoryImportOptions) (initMemoryImportStatus, error) {
+	if opts.ImportPath != "" {
+		return initMemoryImportStatus{}, fmt.Errorf("--import requires the daemon; remove --no-daemon or run agent-memoryd daemon first")
+	}
+	status := initMemoryImportStatus{Mode: "fresh", Skipped: "daemon disabled by --no-daemon"}
+	if opts.Fresh {
+		status.Skipped = ""
+	}
+	return status, nil
+}
+
 type memoryImportChoice struct {
 	ImportPath    string
 	ImportProject string
@@ -753,6 +687,27 @@ func expandPath(path string) string {
 		}
 	}
 	return os.ExpandEnv(path)
+}
+
+func waitForDaemon(ctx context.Context, cfg config.Config) error {
+	timeout := cfg.LockTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if storerpc.Probe(cfg) {
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("%w; socket %s did not become available", errDaemonNotRunning, storerpc.SocketPath(cfg))
+		case <-ticker.C:
+		}
+	}
 }
 
 func runDaemon(cfg config.Config, store *memory.Store) error {

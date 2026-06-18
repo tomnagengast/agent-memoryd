@@ -135,7 +135,7 @@ agent-memoryd init
 
 - Store: a zvec-backed collection at `$AGENT_MEMORYD_HOME/zvec`. All memories are stored here; no separate JSONL source of truth.
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
-- IPC: when the daemon is running, it owns the store and serves CLI/MCP operations over a Unix socket. When the daemon is not running, commands open the store directly with an advisory file lock.
+- IPC: the daemon owns the store and serves CLI/MCP operations over a Unix socket. Store commands require the daemon to be running.
 - Retrieval: hybrid full-text + vector search blended in Go. Embedding is best-effort; records without vectors are full-text searchable and backfilled by `reindex`.
 
 The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. The MCP `reflect` tool uses the same summarizer path for the current session. These producers store distilled memories with transcript, session, or commit references, not raw logs.

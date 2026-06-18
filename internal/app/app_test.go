@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -168,43 +169,44 @@ func TestLatestTranscriptReturnsNewestJSONL(t *testing.T) {
 	}
 }
 
-func TestMaybeServeOwnerRPCServesDirectOwner(t *testing.T) {
-	ctx := context.Background()
-	cfg := config.Config{Root: shortSocketDir(t)}
-	store := directOwnerFakeStore{fakeMemoryAPI: newFakeMemoryAPI()}
+func TestDialOrOpenRequiresDaemon(t *testing.T) {
+	t.Setenv("AGENT_MEMORYD_HOME", shortSocketDir(t))
 
-	stop, err := maybeServeOwnerRPC(ctx, cfg, store)
-	if err != nil {
-		t.Fatalf("maybeServeOwnerRPC: %v", err)
+	_, store, err := dialOrOpen()
+	if !errors.Is(err, errDaemonNotRunning) {
+		t.Fatalf("dialOrOpen error = %v, want errDaemonNotRunning", err)
 	}
-	defer stop()
-
-	if !storerpc.Probe(cfg) {
-		t.Fatal("Probe returned false for direct owner RPC server")
-	}
-	client := storerpc.NewClient(cfg)
-	record, err := client.Add(ctx, memory.AddRequest{ID: "test:one", Body: "hello from rpc"})
-	if err != nil {
-		t.Fatalf("client add: %v", err)
-	}
-	got, err := client.Get(ctx, record.ID)
-	if err != nil {
-		t.Fatalf("client get: %v", err)
-	}
-	if got.Body != "hello from rpc" {
-		t.Fatalf("got body %q, want %q", got.Body, "hello from rpc")
+	if store != nil {
+		t.Fatalf("dialOrOpen store = %#v, want nil", store)
 	}
 }
 
-func TestMaybeServeOwnerRPCSkipsNonOwner(t *testing.T) {
-	cfg := config.Config{Root: shortSocketDir(t)}
-	stop, err := maybeServeOwnerRPC(context.Background(), cfg, newFakeMemoryAPI())
-	if err != nil {
-		t.Fatalf("maybeServeOwnerRPC: %v", err)
-	}
+func TestDialOrOpenUsesDaemonSocket(t *testing.T) {
+	ctx := context.Background()
+	root := shortSocketDir(t)
+	t.Setenv("AGENT_MEMORYD_HOME", root)
+	cfg := config.Config{Root: root}
+	stop := startFakeStoreRPC(t, cfg, newFakeMemoryAPI())
 	defer stop()
-	if storerpc.Probe(cfg) {
-		t.Fatal("Probe returned true for non-owner store")
+
+	if !storerpc.Probe(cfg) {
+		t.Fatal("Probe returned false for fake daemon RPC server")
+	}
+	_, store, err := dialOrOpen()
+	if err != nil {
+		t.Fatalf("dialOrOpen: %v", err)
+	}
+	defer store.Close()
+	record, err := store.Add(ctx, memory.AddRequest{ID: "test:one", Body: "hello from rpc"})
+	if err != nil {
+		t.Fatalf("store add: %v", err)
+	}
+	got, err := store.Get(ctx, record.ID)
+	if err != nil {
+		t.Fatalf("store get: %v", err)
+	}
+	if got.Body != "hello from rpc" {
+		t.Fatalf("got body %q, want %q", got.Body, "hello from rpc")
 	}
 }
 
@@ -299,12 +301,6 @@ func (f *fakeMemoryAPI) Close() error {
 	return nil
 }
 
-type directOwnerFakeStore struct {
-	*fakeMemoryAPI
-}
-
-func (directOwnerFakeStore) directOwner() {}
-
 func shortSocketDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "amapp")
@@ -313,4 +309,23 @@ func shortSocketDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
+}
+
+func startFakeStoreRPC(t *testing.T, cfg config.Config, api memory.API) func() {
+	t.Helper()
+	srv := storerpc.NewServer(api)
+	ln, err := srv.Listen(cfg)
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.Serve(ctx, ln)
+	}()
+	return func() {
+		cancel()
+		<-done
+		os.Remove(storerpc.SocketPath(cfg))
+	}
 }

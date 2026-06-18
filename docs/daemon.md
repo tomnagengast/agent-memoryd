@@ -18,9 +18,7 @@ Run one pass without staying resident:
 
 ## Store Ownership
 
-The daemon holds the zvec collection exclusively for its lifetime. It serves all store operations (add, search, get, forget, list, status, reindex) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. CLI commands and the MCP server route through that socket when the daemon is running.
-
-When the daemon is not running, short-lived CLI commands open the zvec collection directly using an advisory file lock at `$AGENT_MEMORYD_HOME/zvec.lock` to serialize concurrent invocations. If the MCP server is the direct owner, it also serves `$AGENT_MEMORYD_HOME/agent-memoryd.sock` so other CLI commands can route through the already-open store.
+The daemon holds the zvec collection exclusively for its lifetime. It serves all store operations (add, search, get, forget, list, status, reindex) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. CLI commands and the MCP server route through that socket and never open zvec directly.
 
 ## Transcript Ingestion
 

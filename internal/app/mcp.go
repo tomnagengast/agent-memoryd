@@ -78,12 +78,6 @@ type reflectOutput struct {
 }
 
 func runMCP(ctx context.Context, cfg config.Config, store memory.API) error {
-	stopOwnerRPC, err := maybeServeOwnerRPC(ctx, cfg, store)
-	if err != nil {
-		return err
-	}
-	defer stopOwnerRPC()
-
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "agent-memoryd",
 		Version: "0.1.0",

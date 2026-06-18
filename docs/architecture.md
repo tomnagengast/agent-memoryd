@@ -16,9 +16,7 @@ The MCP server exposes `search`, `get`, `add`, `forget`, and `reflect` over stdi
 
 zvec takes an exclusive directory lock at open time. Only one process can hold the collection at once. `agent-memoryd` handles this through a single-owner model:
 
-When the daemon is running, it holds the zvec collection exclusively and serves all store operations (from the CLI, MCP server, and its own ingest loop) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. The daemon serializes all collection access internally with a mutex.
-
-When no daemon is running, a CLI command or MCP invocation opens the zvec collection directly. An advisory file lock at `$AGENT_MEMORYD_HOME/zvec.lock` serializes short-lived daemon-less invocations so they do not race to open the same collection. If the MCP server becomes the direct owner, it also serves `$AGENT_MEMORYD_HOME/agent-memoryd.sock` so other CLI commands can route through that process.
+The daemon holds the zvec collection exclusively and serves all store operations (from the CLI, MCP server, and its own ingest loop) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. The daemon serializes all collection access internally with a mutex. CLI commands and MCP never open zvec directly; if the daemon socket is unavailable, store operations fail with a daemon-not-running error.
 
 This design means write safety for simultaneous writers comes from routing through the single owning process. Do not rely on concurrent direct opens.
 
