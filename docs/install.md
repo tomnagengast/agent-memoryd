@@ -108,7 +108,7 @@ The import path may be an agent-memoryd JSONL store, a markdown file, a text fil
 
 `init` writes executable hooks under `~/.local/share/agent-memoryd/git-hooks` and sets `git config --global core.hooksPath` to that directory when the global value is unset or already points at the managed directory. If another global hook path is already configured, `init` leaves it alone and reports that in `git_hooks`.
 
-On macOS, `init` writes `~/Library/LaunchAgents/dev.agent-memoryd.plist`, bootstraps it with launchd, and kickstarts `memoryd daemon`. On other platforms, launchd setup is skipped.
+On macOS, `init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, bootstraps it with launchd, and kickstarts `memoryd daemon`. On other platforms, launchd setup is skipped.
 
 Use `--no-daemon` if you only want to create the local files and Git hooks without starting the daemon service:
 

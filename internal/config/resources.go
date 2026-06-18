@@ -201,7 +201,7 @@ func writeDefaultTo(path string, cfg Config) error {
 }
 
 func LaunchdPlistPath() string {
-	return filepath.Join(homeDir(), "Library", "LaunchAgents", "dev.agent-memoryd.plist")
+	return filepath.Join(homeDir(), "Library", "LaunchAgents", "dev.memoryd.plist")
 }
 
 func ManagedGitHooksPath(root string) string {

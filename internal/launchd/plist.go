@@ -29,9 +29,11 @@ type Status struct {
 	Skipped   string `json:"skipped,omitempty"`
 }
 
+const DefaultLabel = "dev.memoryd"
+
 func Render(cfg Config) (string, error) {
 	if cfg.Label == "" {
-		cfg.Label = "dev.agent-memoryd"
+		cfg.Label = DefaultLabel
 	}
 	if cfg.Path == "" {
 		cfg.Path = DefaultPath()
@@ -46,7 +48,7 @@ func Render(cfg Config) (string, error) {
 
 func InstallAndStart(cfg Config) (Status, error) {
 	if cfg.Label == "" {
-		cfg.Label = "dev.agent-memoryd"
+		cfg.Label = DefaultLabel
 	}
 	if cfg.Path == "" {
 		cfg.Path = DefaultPath()
@@ -83,7 +85,7 @@ func InstallAndStart(cfg Config) (Status, error) {
 
 func CurrentStatus(cfg Config) Status {
 	if cfg.Label == "" {
-		cfg.Label = "dev.agent-memoryd"
+		cfg.Label = DefaultLabel
 	}
 	status := Status{
 		Supported: runtime.GOOS == "darwin",

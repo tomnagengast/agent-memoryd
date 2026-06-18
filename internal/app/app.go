@@ -130,7 +130,7 @@ func newInitCommand() *cobra.Command {
 				}
 			} else {
 				status, err := launchd.InstallAndStart(launchd.Config{
-					Label:     "dev.agent-memoryd",
+					Label:     launchd.DefaultLabel,
 					Binary:    exe,
 					Root:      cfg.Root,
 					LogDir:    filepath.Join(cfg.Root, "logs"),
@@ -464,7 +464,7 @@ func newLaunchdPlistCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&bin, "bin", "", "memoryd binary path")
-	cmd.Flags().StringVar(&label, "label", "dev.agent-memoryd", "launchd label")
+	cmd.Flags().StringVar(&label, "label", launchd.DefaultLabel, "launchd label")
 	return cmd
 }
 
@@ -531,7 +531,7 @@ func runStatus(ctx context.Context, cfg config.Config) error {
 		"config":      cfg,
 		"store":       status,
 		"service": launchd.CurrentStatus(launchd.Config{
-			Label:     "dev.agent-memoryd",
+			Label:     launchd.DefaultLabel,
 			PlistPath: config.LaunchdPlistPath(),
 		}),
 		"git_hooks": githooks.CurrentStatus(cfg),
