@@ -19,8 +19,6 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 ```json
 {
   "root": "/Users/you/.local/share/agent-memoryd",
-  "store_path": "/Users/you/.local/share/agent-memoryd/memories.jsonl",
-  "index_backend": "lexical",
   "zvec_path": "/Users/you/.local/share/agent-memoryd/zvec",
   "spool_dir": "/Users/you/.local/share/agent-memoryd/spool",
   "transcript_roots": [
@@ -37,6 +35,12 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
     "-"
   ],
   "summarizer_timeout": "5m0s",
+  "embedder_command": [],
+  "embedder_timeout": "30s",
+  "embedding_dim": 768,
+  "search_fts_weight": 0.5,
+  "search_vector_weight": 0.5,
+  "lock_timeout": "5s",
   "memory_context_limit": 12,
   "poll_interval": "10s",
   "idle_after": "2m0s"
@@ -47,13 +51,11 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `root` is the managed data directory. `uninstall --yes` removes this directory, so keep it dedicated to `agent-memoryd`.
 
-`store_path` is the JSONL source store. It is the rebuildable source of truth for memories.
+`store_path` is a legacy field retained only for first-run migration. On first open, if `memories.jsonl` exists in the data root, it is imported once into the zvec store and renamed `memories.jsonl.migrated`. This field has no effect after migration.
 
 `ingest-state.json` is managed operational state under `root`. It records transcript and git event fingerprints that were processed, failed, or quarantined so the daemon does not retry the same unchanged source every poll.
 
-`index_backend` selects the retrieval index. Use `lexical` for the default pure Go build or `zvec` for a binary built with `mise run build-zvec`.
-
-`zvec_path` is the on-disk zvec index directory.
+`zvec_path` is the on-disk zvec store directory. This is the durable store for all memories.
 
 `spool_dir` holds queued git events. The managed global Git hooks write small JSON files here, and the daemon passes each event's `git show` output to the summarizer.
 
@@ -62,6 +64,18 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 `summarizer_command` is the external command used by daemon producers to distill transcripts and git summaries into durable memories. The command receives a prompt on stdin and must return JSON shaped like `{"memories":[{"kind":"preference","summary":"short summary","body":"concise durable memory"}]}`. The default command uses `codex exec` in read-only ephemeral mode. Set this to another command if you want a different local summarization agent.
 
 `summarizer_timeout` bounds one summarizer run.
+
+`embedder_command` is the external command used to embed memory text as a vector for semantic search. The command receives the text on stdin and must return a JSON array of float32 values. When empty or omitted, embedding is disabled and only full-text search is used. Example: `["my-embedder", "--dim", "768"]`.
+
+`embedder_timeout` bounds one embedding call. Default is `30s`.
+
+`embedding_dim` is the expected dimension of vectors returned by `embedder_command`. Default is `768`. This must match the model used by your embedder. Changing this after the store is created requires a fresh store.
+
+`search_fts_weight` is the blend weight applied to full-text search results when both FTS and vector legs return results. Default is `0.5`. Increase this to favor keyword matching.
+
+`search_vector_weight` is the blend weight applied to vector search results. Default is `0.5`. Increase this to favor semantic similarity. Has no effect when `embedder_command` is not configured.
+
+`lock_timeout` is how long a direct store open waits to acquire the advisory file lock before returning a busy error. Default is `5s`. This applies only when no daemon is running; when the daemon is up, requests route through the socket without waiting on the file lock.
 
 `memory_context_limit` controls how many existing memory summaries are passed to the summarizer so it can avoid duplicating old memories and identify genuinely new facts, preferences, instructions, or decisions.
 

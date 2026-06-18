@@ -16,6 +16,12 @@ Run one pass without staying resident:
 ./agent-memoryd scan-once
 ```
 
+## Store Ownership
+
+The daemon holds the zvec collection exclusively for its lifetime. It serves all store operations (add, search, get, forget, list, status, reindex) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. CLI commands and the MCP server route through that socket when the daemon is running.
+
+When the daemon is not running, CLI commands and the MCP server open the zvec collection directly using an advisory file lock at `$AGENT_MEMORYD_HOME/zvec.lock` to serialize concurrent invocations. This daemon-less mode is fully functional for single-user use; the daemon is required only when you want concurrent writers (for example, the ingest loop and MCP tools running at the same time).
+
 ## Transcript Ingestion
 
 The daemon scans each configured `transcript_roots` entry for `.jsonl` files and exported OpenCode `.json` sessions. OpenCode data roots are handled through `opencode session list` plus `opencode export <sessionID>`, avoiding a SQLite dependency. By default those roots are:

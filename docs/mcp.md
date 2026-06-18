@@ -12,6 +12,12 @@
 }
 ```
 
+## Store Access
+
+When the daemon is running, the MCP server connects to the daemon's Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock` and routes all store operations through the daemon. This allows the MCP server and the daemon's ingest loop to share the store safely.
+
+When the daemon is not running, the MCP server opens the zvec collection directly. This daemon-less mode works fine for single-process use. If you run both the MCP server and another CLI command at the same time without a daemon, they serialize through the advisory file lock.
+
 ## Tools
 
 ### search

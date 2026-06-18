@@ -10,6 +10,12 @@ Install tools:
 mise install
 ```
 
+Download the native zvec libraries (required before building or running full tests):
+
+```sh
+mise run zvec-libs
+```
+
 Run the standard checks:
 
 ```sh
@@ -18,14 +24,7 @@ mise run test
 mise run build
 ```
 
-GitHub Actions runs formatting, tests, and the default build on pushes to `main` and pull requests.
-
-For zvec-specific changes, also run:
-
-```sh
-mise run zvec-libs
-mise run build-zvec
-```
+GitHub Actions runs formatting, tests, and the build on pushes to `main` and pull requests.
 
 Create a GitHub release by pushing a semver tag:
 
@@ -34,13 +33,11 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow publishes default lexical binaries for macOS and Linux.
-
 ## Project Shape
 
 The CLI lives in `internal/app`.
 
-The durable memory model and source store live in `internal/memory`.
+The durable memory model and zvec-backed store live in `internal/memory`.
 
 Config and lifecycle resources live in `internal/config`.
 
@@ -48,11 +45,21 @@ Daemon ingestion lives in `internal/daemon`, `internal/ingest`, and `internal/sp
 
 The configurable summarization adapter lives in `internal/summarizer`.
 
-Index adapters live in `internal/indexer` and `internal/zvecindex`.
+The configurable embedding adapter lives in `internal/embedder`.
+
+The advisory file lock helper lives in `internal/flock`.
+
+The IPC server and client (daemon socket) live in `internal/storerpc`.
+
+## Build Details
+
+`mise run build` always uses `CGO_ENABLED=1` and links against the zvec native library in `./lib/`. There is no pure-Go fallback build. `mise run zvec-libs` must be run before `mise run build`.
+
+`mise run install-local` builds the binary with an rpath pointing at `~/.local/lib/agent-memoryd/` (not the working tree `./lib/` directory) and copies the native library there before installing the binary to `~/.local/bin/`. This makes the installed binary independent of the repository checkout location.
 
 ## Design Principles
 
-Keep `memories.jsonl` as the durable source of truth. Indexes should be rebuildable.
+Keep the zvec store as the sole durable memory store. The store is the system of record, not a derived cache.
 
 Keep MCP tools compact. `search` should return summaries and ids; `get` should return full records only when needed. `reflect` should store distilled memories through the summarizer, not raw session text.
 
@@ -64,6 +71,6 @@ Daemon and MCP reflection producers should not store raw transcripts, session te
 
 ## Documentation
 
-Update `README.md` and the relevant file in `docs/` when changing commands, config fields, managed resources, MCP tools, ingestion behavior, summarizer behavior, or zvec setup.
+Update `README.md` and the relevant file in `docs/` when changing commands, config fields, managed resources, MCP tools, ingestion behavior, summarizer behavior, or embedder/search behavior.
 
 Docs should describe current behavior plainly. If something is a future direction, mark it as such or leave it out.

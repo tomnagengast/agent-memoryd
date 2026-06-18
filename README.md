@@ -8,6 +8,7 @@ Local memory daemon for coding agents.
 
 ```sh
 mise install
+mise run zvec-libs
 mise run build
 ./agent-memoryd --help
 ./agent-memoryd --version
@@ -53,7 +54,7 @@ Add and retrieve a memory from the CLI:
 - MCP tools for `search`, `get`, `add`, `forget`, and `reflect`
 - Agent-managed memories without burning the agent's main turn on note writing
 - Summarizer-driven transcript and git producers that store distilled memories with source pointers
-- Rebuildable source records with zvec-backed retrieval
+- zvec-backed retrieval with hybrid full-text and vector search
 
 ## Non-Goals
 
@@ -63,7 +64,7 @@ Add and retrieve a memory from the CLI:
 
 ## Commands
 
-`init` creates the managed data root, config, memory store, git spool, global Git hook scripts, logs directory, and resource manifest. It can start fresh or import existing memories from an agent-memoryd JSONL file or a markdown/text file tree. It configures Git's global `core.hooksPath` when that setting is unset or already points at the managed hook directory. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
+`init` creates the managed data root, config, zvec store, git spool, global Git hook scripts, logs directory, and resource manifest. It can start fresh or import existing memories from an agent-memoryd JSONL file or a markdown/text file tree. It configures Git's global `core.hooksPath` when that setting is unset or already points at the managed hook directory. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
 
 `status` prints system help, MCP tool help, loaded config, store status, launchd service status, and every resource persisted by `init`.
 
@@ -81,7 +82,7 @@ Add and retrieve a memory from the CLI:
 
 `launchd-plist` renders a macOS LaunchAgent plist to stdout for manual inspection or advanced installs.
 
-`reindex` rebuilds the configured retrieval index from `memories.jsonl`.
+`reindex` backfills vector embeddings for memories that were stored without an embedder configured.
 
 `uninstall --yes` removes managed `agent-memoryd` resources.
 
@@ -105,11 +106,12 @@ This project uses mise for tool and task management.
 
 ```sh
 mise install
+mise run zvec-libs
 mise run test
 mise run build
 ```
 
-`mise run build` stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `AGENT_MEMORYD_VERSION` to override the displayed version for a release build.
+`mise run build` always uses `CGO_ENABLED=1` and links the zvec native library. Run `mise run zvec-libs` first to populate `./lib/`. The build stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `AGENT_MEMORYD_VERSION` to override the displayed version for a release build.
 
 Compare the checked-out binary with the installed one:
 
@@ -118,32 +120,23 @@ Compare the checked-out binary with the installed one:
 agent-memoryd --version
 ```
 
-Update the installed binary with an atomic replace:
+Update the installed binary and native library with an atomic install:
 
 ```sh
 mise run install-local
 agent-memoryd init
 ```
 
-The default build keeps source records in a local JSONL file and uses a small lexical search fallback so contributors can build and test without native zvec libraries.
-
-The production retrieval index uses [`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go) behind the `zvec` build tag. That SDK uses cgo and native zvec libraries, so it is not required for the basic contributor test loop:
-
-```sh
-mise run zvec-libs
-mise run build-zvec
-```
-
-Tagged releases publish lexical macOS and Linux binaries through GitHub Releases. See [docs/install.md](./docs/install.md#install-from-a-github-release) for the install command and asset naming.
+`mise run install-local` rebuilds the binary with an rpath pointing at `~/.local/lib/agent-memoryd/` and copies the native library there, so the installed binary works independently of the repository working tree.
 
 ## Architecture
 
 `agent-memoryd` has four layers:
 
-- Source store: a rebuildable JSONL memory log under `AGENT_MEMORYD_HOME`.
-- Index: lexical by default, zvec-go behind the `zvec` build tag.
+- Store: a zvec-backed collection at `$AGENT_MEMORYD_HOME/zvec`. All memories are stored here; no separate JSONL source of truth.
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
-- Retrieval: MCP tools and CLI commands share the same store.
+- IPC: when the daemon is running, it owns the store and serves CLI/MCP operations over a Unix socket. When the daemon is not running, commands open the store directly with an advisory file lock.
+- Retrieval: hybrid full-text + vector search blended in Go. Embedding is best-effort; records without vectors are full-text searchable and backfilled by `reindex`.
 
 The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. The MCP `reflect` tool uses the same summarizer path for the current session. These producers store distilled memories with transcript, session, or commit references, not raw logs.
 
@@ -167,7 +160,7 @@ Creates or updates a memory.
 
 `forget(id)`
 
-Deletes a memory from the local source store and derived index.
+Deletes a memory from the local store.
 
 `reflect(session?, transcript_path?, project?, cwd?, source?, limit?)`
 
