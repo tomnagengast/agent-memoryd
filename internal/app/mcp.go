@@ -77,7 +77,7 @@ type reflectOutput struct {
 	Memories []memory.Record `json:"memories"`
 }
 
-func runMCP(ctx context.Context, cfg config.Config, store *memory.Store) error {
+func runMCP(ctx context.Context, cfg config.Config, store memory.API) error {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "agent-memoryd",
 		Version: "0.1.0",
@@ -159,7 +159,7 @@ func runMCP(ctx context.Context, cfg config.Config, store *memory.Store) error {
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-func reflectMemories(ctx context.Context, cfg config.Config, store *memory.Store, in reflectInput) (reflectOutput, error) {
+func reflectMemories(ctx context.Context, cfg config.Config, store memory.API, in reflectInput) (reflectOutput, error) {
 	agent := summarizer.CommandAgent{
 		Command: cfg.SummarizerCommand,
 		Timeout: cfg.SummarizerTimeout,
@@ -204,7 +204,7 @@ func reflectMemories(ctx context.Context, cfg config.Config, store *memory.Store
 	return reflectOutput{OK: true, Source: transcript.Path, Memories: records}, nil
 }
 
-func reflectSessionText(ctx context.Context, store *memory.Store, agent summarizer.Agent, in reflectInput, limit int) ([]memory.Record, error) {
+func reflectSessionText(ctx context.Context, store memory.API, agent summarizer.Agent, in reflectInput, limit int) ([]memory.Record, error) {
 	project := strings.TrimSpace(in.Project)
 	if project == "" && strings.TrimSpace(in.CWD) != "" {
 		project = filepath.Base(strings.TrimSpace(in.CWD))

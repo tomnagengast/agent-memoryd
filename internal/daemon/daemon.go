@@ -15,7 +15,7 @@ import (
 
 type Daemon struct {
 	Config config.Config
-	Store  *memory.Store
+	Store  memory.API
 	Log    *slog.Logger
 }
 

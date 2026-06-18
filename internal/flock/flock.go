@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gofrs/flock"
+	goflock "github.com/gofrs/flock"
 )
 
 var ErrBusy = errors.New("store busy, try again")
@@ -21,29 +21,42 @@ type FileLocker struct {
 }
 
 func (l *FileLocker) WithLock(ctx context.Context, fn func() error) error {
-	fl := flock.New(l.Path)
+	release, err := l.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release() //nolint:errcheck
+	return fn()
+}
+
+// Acquire acquires the advisory file lock and returns a release function.
+// The caller must call the returned function when the lock should be released.
+// Returns ErrBusy if the lock cannot be acquired within LockTimeout.
+func (l *FileLocker) Acquire(ctx context.Context) (release func() error, err error) {
+	fl := goflock.New(l.Path)
 	timeout := l.LockTimeout
 	if timeout == 0 {
 		timeout = 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	lockCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	retry := l.RetryDelay
 	if retry == 0 {
 		retry = 50 * time.Millisecond
 	}
-	ok, err := fl.TryLockContext(ctx, retry)
+	ok, err := fl.TryLockContext(lockCtx, retry)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return ErrBusy
+			return nil, ErrBusy
 		}
-		return err
+		return nil, err
 	}
 	if !ok {
-		return ErrBusy
+		return nil, ErrBusy
 	}
-	defer fl.Unlock()
-	return fn()
+	return func() error {
+		return fl.Unlock()
+	}, nil
 }
 
 type NoopLocker struct{}

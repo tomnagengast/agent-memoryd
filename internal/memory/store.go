@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/tomnagengast/agent-memoryd/internal/embedder"
-	"github.com/tomnagengast/agent-memoryd/internal/flock"
 	zvec "github.com/zvec-ai/zvec-go"
 )
 
@@ -35,9 +34,9 @@ func initializeZvec() error {
 }
 
 type Store struct {
+	mu       sync.Mutex
 	coll     *zvec.Collection
 	path     string
-	lock     flock.Locker
 	embedder embedder.Embedder
 	weights  BlendWeights
 	dim      int
@@ -72,8 +71,6 @@ func Open(cfg OpenConfig) (*Store, error) {
 	if err := initializeZvec(); err != nil {
 		return nil, fmt.Errorf("initialize zvec: %w", err)
 	}
-	lockPath := cfg.ZvecPath + ".lock"
-	locker := &flock.FileLocker{Path: lockPath, LockTimeout: cfg.LockTimeout}
 
 	var coll *zvec.Collection
 	var err error
@@ -97,7 +94,6 @@ func Open(cfg OpenConfig) (*Store, error) {
 	return &Store{
 		coll:     coll,
 		path:     cfg.ZvecPath,
-		lock:     locker,
 		embedder: emb,
 		weights:  BlendWeights{FTS: cfg.FTSWeight, Vector: cfg.VectorWeight},
 		dim:      cfg.EmbeddingDim,
@@ -122,6 +118,7 @@ func (s *Store) Add(ctx context.Context, req AddRequest) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	// Embed OUTSIDE the lock: subprocess call should not hold s.mu.
 	vec, embedErr := s.embedder.Embed(ctx, record.Summary+"\n"+record.Body)
 	if embedErr != nil && !errors.Is(embedErr, embedder.ErrDisabled) {
 		vec = nil // treat other errors as pending - vector will be backfilled
@@ -129,18 +126,17 @@ func (s *Store) Add(ctx context.Context, req AddRequest) (Record, error) {
 	if vec != nil && len(vec) != s.dim {
 		return Record{}, fmt.Errorf("%w: expected %d, got %d", ErrDimension, s.dim, len(vec))
 	}
-	err = s.lock.WithLock(ctx, func() error {
-		doc, docErr := recordToDoc(record, vec)
-		if docErr != nil {
-			return docErr
-		}
-		defer doc.Destroy()
-		if _, upsertErr := s.coll.Upsert([]*zvec.Doc{doc}); upsertErr != nil {
-			return fmt.Errorf("upsert: %w", upsertErr)
-		}
-		return s.coll.Flush()
-	})
-	if err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	doc, docErr := recordToDoc(record, vec)
+	if docErr != nil {
+		return Record{}, docErr
+	}
+	defer doc.Destroy()
+	if _, upsertErr := s.coll.Upsert([]*zvec.Doc{doc}); upsertErr != nil {
+		return Record{}, fmt.Errorf("upsert: %w", upsertErr)
+	}
+	if err := s.coll.Flush(); err != nil {
 		return Record{}, err
 	}
 	return record, nil
@@ -150,6 +146,8 @@ func (s *Store) Get(ctx context.Context, id string) (Record, error) {
 	if err := ctx.Err(); err != nil {
 		return Record{}, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	docs, err := s.coll.Fetch([]string{sanitizePK(id)}, nil)
 	if err != nil {
 		return Record{}, fmt.Errorf("fetch: %w", err)
@@ -162,16 +160,19 @@ func (s *Store) Get(ctx context.Context, id string) (Record, error) {
 }
 
 func (s *Store) Forget(ctx context.Context, id string) error {
-	return s.lock.WithLock(ctx, func() error {
-		result, err := s.coll.Delete([]string{sanitizePK(id)})
-		if err != nil {
-			return fmt.Errorf("delete: %w", err)
-		}
-		if result.SuccessCount == 0 {
-			return ErrNotFound
-		}
-		return s.coll.Flush()
-	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := s.coll.Delete([]string{sanitizePK(id)})
+	if err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	if result.SuccessCount == 0 {
+		return ErrNotFound
+	}
+	return s.coll.Flush()
 }
 
 func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, error) {
@@ -187,6 +188,12 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 	}
 
 	filter := filterExpr(req)
+
+	// Embed OUTSIDE the lock: subprocess call should not hold s.mu.
+	queryVec, embedErr := s.embedder.Embed(ctx, req.Query)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// FTS leg using zvec FTS API: NewFTS() + SetMatchString + query.SetFTS
 	ftsQuery := zvec.NewSearchQuery()
@@ -224,7 +231,6 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 
 	// Vector leg - skip if embedder disabled or fails
 	var vecResults []SearchResult
-	queryVec, embedErr := s.embedder.Embed(ctx, req.Query)
 	if embedErr == nil && len(queryVec) == s.dim {
 		vecQuery := zvec.NewSearchQuery()
 		defer vecQuery.Destroy()
@@ -256,6 +262,8 @@ func (s *Store) List(ctx context.Context) ([]Record, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	stats, err := s.coll.GetStats()
 	if err != nil {
 		return nil, fmt.Errorf("get stats: %w", err)
@@ -311,6 +319,8 @@ func (s *Store) Status(ctx context.Context) (Status, error) {
 	if err := ctx.Err(); err != nil {
 		return Status{}, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	stats, err := s.coll.GetStats()
 	if err != nil {
 		return Status{}, fmt.Errorf("get stats: %w", err)

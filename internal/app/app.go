@@ -18,11 +18,13 @@ import (
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
 	"github.com/tomnagengast/agent-memoryd/internal/embedder"
 	"github.com/tomnagengast/agent-memoryd/internal/explore"
+	"github.com/tomnagengast/agent-memoryd/internal/flock"
 	"github.com/tomnagengast/agent-memoryd/internal/githooks"
 	"github.com/tomnagengast/agent-memoryd/internal/importmem"
 	"github.com/tomnagengast/agent-memoryd/internal/launchd"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/spool"
+	"github.com/tomnagengast/agent-memoryd/internal/storerpc"
 	"github.com/tomnagengast/agent-memoryd/internal/version"
 )
 
@@ -102,7 +104,7 @@ func newInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -208,7 +210,7 @@ func newAddCommand() *cobra.Command {
 		Short: "Create or update a memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -236,7 +238,7 @@ func newSearchCommand() *cobra.Command {
 		Short: "Search memory summaries.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -261,7 +263,7 @@ func newGetCommand() *cobra.Command {
 		Short: "Fetch one full memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -284,7 +286,7 @@ func newForgetCommand() *cobra.Command {
 		Short: "Delete one memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -308,7 +310,7 @@ func newExploreCommand() *cobra.Command {
 		Short: "Explore memories in an interactive TUI.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -326,7 +328,7 @@ func newReindexCommand() *cobra.Command {
 		Short: "Embed memories that are missing vectors.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -346,7 +348,7 @@ func newMCPCommand() *cobra.Command {
 		Short: "Run the MCP stdio server.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadStore()
+			cfg, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -378,7 +380,7 @@ func newScanOnceCommand() *cobra.Command {
 		Short: "Process git spool events and idle transcripts once.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadStore()
+			cfg, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
@@ -456,6 +458,8 @@ func newLaunchdPlistCommand() *cobra.Command {
 	return cmd
 }
 
+// loadStore opens the zvec store directly.  Used only by the daemon command,
+// which is the exclusive process-level owner of the collection.
 func loadStore() (config.Config, *memory.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -482,8 +486,72 @@ func loadStore() (config.Config, *memory.Store, error) {
 	return cfg, store, nil
 }
 
+// dialOrOpen returns a memory.API for the current config.  When a daemon is
+// running (socket present), it returns an RPC client.  Otherwise it opens the
+// zvec collection directly under an advisory file lock so concurrent
+// daemon-less invocations serialize rather than colliding on zvec's exclusive
+// lock.
+func dialOrOpen() (config.Config, memory.API, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.Config{}, nil, err
+	}
+	if storerpc.Probe(cfg) {
+		return cfg, storerpc.NewClient(cfg), nil
+	}
+	// Direct-owner path: acquire advisory flock first so concurrent daemon-less
+	// invocations wait instead of both trying to open the zvec collection.
+	// Ensure the data root exists so the lock file can be created.
+	if mkErr := os.MkdirAll(cfg.Root, 0o755); mkErr != nil {
+		return config.Config{}, nil, fmt.Errorf("create data root: %w", mkErr)
+	}
+	locker := &flock.FileLocker{
+		Path:        cfg.ZvecPath + ".lock",
+		LockTimeout: cfg.LockTimeout,
+	}
+	release, err := locker.Acquire(context.Background())
+	if err != nil {
+		return config.Config{}, nil, fmt.Errorf("acquire store lock: %w", err)
+	}
+	var emb embedder.Embedder = embedder.Disabled{}
+	if len(cfg.EmbedderCommand) > 0 {
+		emb = embedder.Command{
+			Argv:    cfg.EmbedderCommand,
+			Timeout: cfg.EmbedderTimeout,
+		}
+	}
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     cfg.ZvecPath,
+		EmbeddingDim: cfg.EmbeddingDim,
+		LockTimeout:  cfg.LockTimeout,
+		FTSWeight:    cfg.SearchFTSWeight,
+		VectorWeight: cfg.SearchVectorWeight,
+		Embedder:     emb,
+	})
+	if err != nil {
+		release() //nolint:errcheck
+		return config.Config{}, nil, err
+	}
+	return cfg, &lockedStore{Store: store, release: release}, nil
+}
+
+// lockedStore wraps *memory.Store and releases the advisory file lock on Close.
+type lockedStore struct {
+	*memory.Store
+	release func() error
+}
+
+func (l *lockedStore) Close() error {
+	storeErr := l.Store.Close()
+	lockErr := l.release()
+	if storeErr != nil {
+		return storeErr
+	}
+	return lockErr
+}
+
 func runStatus(ctx context.Context, cfg config.Config) error {
-	_, store, err := loadStore()
+	_, store, err := dialOrOpen()
 	if err != nil {
 		return err
 	}
@@ -547,7 +615,7 @@ type initMemoryImportStatus struct {
 	Existing int               `json:"existing,omitempty"`
 }
 
-func runInitMemoryImport(ctx context.Context, store *memory.Store, opts initMemoryImportOptions) (initMemoryImportStatus, error) {
+func runInitMemoryImport(ctx context.Context, store memory.API, opts initMemoryImportOptions) (initMemoryImportStatus, error) {
 	if opts.ImportPath != "" {
 		result, err := importmem.Import(ctx, store, importmem.Options{Path: opts.ImportPath, Project: opts.ImportProject})
 		if err != nil {
@@ -652,19 +720,38 @@ func expandPath(path string) string {
 func runDaemon(cfg config.Config, store *memory.Store) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Start the RPC server so CLI/MCP processes can talk to us via the socket
+	// instead of opening zvec directly (zvec takes a fully-exclusive lock).
+	srv := storerpc.NewServer(store)
+	ln, err := srv.Listen(cfg)
+	if err != nil {
+		return fmt.Errorf("start rpc server: %w", err)
+	}
+	sockPath := storerpc.SocketPath(cfg)
+	srvDone := make(chan error, 1)
+	go func() {
+		srvDone <- srv.Serve(ctx, ln)
+	}()
+	defer func() {
+		ln.Close()
+		os.Remove(sockPath)
+		<-srvDone
+	}()
+
 	d := daemon.Daemon{
 		Config: cfg,
 		Store:  store,
 		Log:    slog.Default(),
 	}
-	err := d.Run(ctx)
-	if errors.Is(err, context.Canceled) {
+	runErr := d.Run(ctx)
+	if errors.Is(runErr, context.Canceled) {
 		return nil
 	}
-	return err
+	return runErr
 }
 
-func runScanOnce(ctx context.Context, cfg config.Config, store *memory.Store) error {
+func runScanOnce(ctx context.Context, cfg config.Config, store memory.API) error {
 	d := daemon.Daemon{Config: cfg, Store: store}
 	if err := d.Once(ctx); err != nil {
 		return err
