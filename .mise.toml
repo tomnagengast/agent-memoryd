@@ -24,7 +24,7 @@ fi
 '''
 
 [tasks.build]
-description = "Build the agent-memoryd binary (always cgo + zvec)"
+description = "Build the memoryd binary (always cgo + zvec)"
 run = '''
 version="${AGENT_MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
@@ -39,12 +39,12 @@ CGO_CFLAGS="-I$(pwd)/lib/include" \
 CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,$(pwd)/lib/${zvec_platform}" \
 CGO_ENABLED=1 go build \
   -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
-  -o ./agent-memoryd \
+  -o ./memoryd \
   ./cmd/agent-memoryd
 '''
 
 [tasks.install-local]
-description = "Install agent-memoryd binary and native lib to ~/.local (rpath-independent of working tree)"
+description = "Install memoryd binary and native lib to ~/.local (rpath-independent of working tree)"
 run = '''
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64)  zvec_platform=darwin_arm64; libext=dylib ;;
@@ -65,17 +65,17 @@ CGO_CFLAGS="-I$(pwd)/lib/include" \
 CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,${HOME}/.local/lib/agent-memoryd" \
 CGO_ENABLED=1 go build \
   -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
-  -o ./agent-memoryd \
+  -o ./memoryd \
   ./cmd/agent-memoryd
 
 # Atomic install of binary
 mkdir -p "${HOME}/.local/bin"
-tmp="${HOME}/.local/bin/agent-memoryd.new"
-cp ./agent-memoryd "${tmp}"
+tmp="${HOME}/.local/bin/memoryd.new"
+cp ./memoryd "${tmp}"
 chmod 755 "${tmp}"
-mv "${tmp}" "${HOME}/.local/bin/agent-memoryd"
+mv "${tmp}" "${HOME}/.local/bin/memoryd"
 
-echo "Installed: ${HOME}/.local/bin/agent-memoryd"
+echo "Installed: ${HOME}/.local/bin/memoryd"
 echo "Native lib: ${HOME}/.local/lib/agent-memoryd/libzvec_c_api.${libext}"
 '''
 

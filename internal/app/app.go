@@ -33,7 +33,7 @@ func Run(args []string) error {
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
 		if isUsageError(err) {
-			return fmt.Errorf("%w\n\nRun 'agent-memoryd --help' for usage.", err)
+			return fmt.Errorf("%w\n\nRun '%s --help' for usage.", err, version.CommandName)
 		}
 		return err
 	}
@@ -52,7 +52,7 @@ func isUsageError(err error) bool {
 func newRootCommand() *cobra.Command {
 	var showVersion bool
 	root := &cobra.Command{
-		Use:           "agent-memoryd",
+		Use:           version.CommandName,
 		Short:         "Local memory daemon for coding agents.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -199,7 +199,7 @@ func newUninstallCommand() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove managed agent-memoryd resources.",
+		Short: "Remove managed local memory resources.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -209,7 +209,7 @@ func newUninstallCommand() *cobra.Command {
 			return runUninstall(cfg, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "remove all managed agent-memoryd resources")
+	cmd.Flags().BoolVar(&yes, "yes", false, "remove all managed local memory resources")
 	return cmd
 }
 
@@ -463,7 +463,7 @@ func newLaunchdPlistCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&bin, "bin", "", "agent-memoryd binary path")
+	cmd.Flags().StringVar(&bin, "bin", "", "memoryd binary path")
 	cmd.Flags().StringVar(&label, "label", "dev.agent-memoryd", "launchd label")
 	return cmd
 }
@@ -548,7 +548,7 @@ func runUninstall(cfg config.Config, yes bool) error {
 		return printJSON(map[string]any{
 			"ok":         false,
 			"needs_yes":  true,
-			"message":    "rerun with --yes to remove managed agent-memoryd resources",
+			"message":    "rerun with --yes to remove managed local memory resources",
 			"resources":  manifest.Resources,
 			"help":       systemHelp(),
 			"configured": cfg.Root,
@@ -780,7 +780,7 @@ type helpItem struct {
 var commandHelp = []helpItem{
 	{Name: "init", Summary: "create config, choose memory import mode, install hooks, and start the daemon"},
 	{Name: "status", Summary: "show help, config, store status, and managed resources"},
-	{Name: "uninstall --yes", Summary: "remove managed agent-memoryd resources"},
+	{Name: "uninstall --yes", Summary: "remove managed local memory resources"},
 	{Name: "help [command]", Summary: "show command help"},
 	{Name: "completion", Summary: "generate shell completion scripts"},
 	{Name: "mcp", Summary: "run the MCP stdio server"},

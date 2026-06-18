@@ -16,7 +16,7 @@ This fetches prebuilt libraries into `./lib/` for the current platform. Build is
 mise run build
 ```
 
-There is no pure-Go fallback build. The native library is required.
+The binary is written to `./memoryd`. There is no pure-Go fallback build. The native library is required.
 
 ## Store Layout
 

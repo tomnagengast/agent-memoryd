@@ -12,7 +12,7 @@ import (
 
 func TestWriteManagedHooksCreatesExecutableHooks(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "hooks")
-	binary := filepath.Join(t.TempDir(), "agent-memoryd")
+	binary := filepath.Join(t.TempDir(), "memoryd")
 
 	if err := WriteManagedHooks(dir, binary); err != nil {
 		t.Fatalf("write managed hooks: %v", err)
@@ -50,7 +50,7 @@ func TestInstallManagedSetsUnsetGlobalHooksPath(t *testing.T) {
 	cfg := config.Default()
 	cfg.Root = t.TempDir()
 
-	status, err := InstallManaged(cfg, "/tmp/agent-memoryd")
+	status, err := InstallManaged(cfg, "/tmp/memoryd")
 	if err != nil {
 		t.Fatalf("install managed: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestInstallManagedDoesNotOverrideExistingGlobalHooksPath(t *testing.T) {
 	cfg := config.Default()
 	cfg.Root = t.TempDir()
 
-	status, err := InstallManaged(cfg, "/tmp/agent-memoryd")
+	status, err := InstallManaged(cfg, "/tmp/memoryd")
 	if err != nil {
 		t.Fatalf("install managed: %v", err)
 	}
