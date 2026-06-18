@@ -4,7 +4,7 @@
 
 ## Layers
 
-The store is a zvec collection at `$AGENT_MEMORYD_HOME/zvec`. Each record has an id, kind, optional project, optional source reference, summary, body, and timestamps. zvec is the sole durable store; there is no separate JSONL source of truth.
+The store is a zvec collection at `$MEMORYD_HOME/zvec`. Each record has an id, kind, optional project, optional source reference, summary, body, and timestamps. zvec is the sole durable store; there is no separate JSONL source of truth.
 
 On first open, if a legacy `memories.jsonl` file is present in the same root, it is imported once into the zvec collection and then renamed `memories.jsonl.migrated`. No further migration is needed.
 
@@ -16,7 +16,7 @@ The MCP server exposes `search`, `get`, `add`, `forget`, and `reflect` over stdi
 
 zvec takes an exclusive directory lock at open time. Only one process can hold the collection at once. `agent-memoryd` handles this through a single-owner model:
 
-The daemon holds the zvec collection exclusively and serves all store operations (from the CLI, MCP server, and its own ingest loop) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. The daemon serializes all collection access internally with a mutex. CLI commands and MCP never open zvec directly; if the daemon socket is unavailable, store operations fail with a daemon-not-running error.
+The daemon holds the zvec collection exclusively and serves all store operations (from the CLI, MCP server, and its own ingest loop) over a Unix socket at `$MEMORYD_HOME/memoryd.sock`. The daemon serializes all collection access internally with a mutex. CLI commands and MCP never open zvec directly; if the daemon socket is unavailable, store operations fail with a daemon-not-running error.
 
 This design means write safety for simultaneous writers comes from routing through the single owning process. Do not rely on concurrent direct opens.
 

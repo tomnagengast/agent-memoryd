@@ -9,7 +9,7 @@ import (
 )
 
 func TestInitPersistsManagedResources(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", filepath.Join(t.TempDir(), "agent-memoryd"))
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
 
 	cfg, manifest, err := Init("")
 	if err != nil {
@@ -76,7 +76,7 @@ func TestLoadManifestFiltersDeprecatedMemorySourceStore(t *testing.T) {
 }
 
 func TestUninstallRemovesManagedRoot(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", filepath.Join(t.TempDir(), "agent-memoryd"))
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
 
 	cfg, manifest, err := Init("")
 	if err != nil {
@@ -91,7 +91,7 @@ func TestUninstallRemovesManagedRoot(t *testing.T) {
 }
 
 func TestInitWritesSummarizerConfig(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", filepath.Join(t.TempDir(), "agent-memoryd"))
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
 
 	cfg, _, err := Init("")
 	if err != nil {

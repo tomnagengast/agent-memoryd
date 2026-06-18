@@ -111,7 +111,7 @@ mise run test
 mise run build
 ```
 
-`mise run build` always uses `CGO_ENABLED=1` and links the zvec native library. Run `mise run zvec-libs` first to populate `./lib/`. The build stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `AGENT_MEMORYD_VERSION` to override the displayed version for a release build.
+`mise run build` always uses `CGO_ENABLED=1` and links the zvec native library. Run `mise run zvec-libs` first to populate `./lib/`. The build stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `MEMORYD_VERSION` to override the displayed version for a release build.
 
 Compare the checked-out binary with the installed one:
 
@@ -127,13 +127,13 @@ mise run install-local
 memoryd init
 ```
 
-`mise run install-local` rebuilds the binary with an rpath pointing at `~/.local/lib/agent-memoryd/` and copies the native library there, so the installed binary works independently of the repository working tree.
+`mise run install-local` rebuilds the binary with an rpath pointing at `~/.local/lib/memoryd/` and copies the native library there, so the installed binary works independently of the repository working tree.
 
 ## Architecture
 
 `agent-memoryd` has four layers:
 
-- Store: a zvec-backed collection at `$AGENT_MEMORYD_HOME/zvec`. All memories are stored here; no separate JSONL source of truth.
+- Store: a zvec-backed collection at `$MEMORYD_HOME/zvec`. All memories are stored here; no separate JSONL source of truth.
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
 - IPC: the daemon owns the store and serves CLI/MCP operations over a Unix socket. Store commands require the daemon to be running.
 - Retrieval: hybrid full-text + vector search blended in Go. Embedding is best-effort; records without vectors are full-text searchable and backfilled by `reindex`.

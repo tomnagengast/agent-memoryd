@@ -46,16 +46,16 @@ memoryd --version
 
 ## Install Locally
 
-`mise run install-local` builds a tree-independent binary (rpath pointing at `~/.local/lib/agent-memoryd`) and installs both the binary and the native library:
+`mise run install-local` builds a tree-independent binary (rpath pointing at `~/.local/lib/memoryd`) and installs both the binary and the native library:
 
 ```sh
 mise run zvec-libs   # if not already done
 mise run install-local
 ```
 
-This copies `libzvec_c_api.dylib` (or `.so` on Linux) to `~/.local/lib/agent-memoryd/` and installs the binary to `~/.local/bin/memoryd` with an atomic replace. After install, the binary loads the native library from `~/.local/lib/agent-memoryd/` regardless of whether the repository working tree is present.
+This copies `libzvec_c_api.dylib` (or `.so` on Linux) to `~/.local/lib/memoryd/` and installs the binary to `~/.local/bin/memoryd` with an atomic replace. After install, the binary loads the native library from `~/.local/lib/memoryd/` regardless of whether the repository working tree is present.
 
-Release builds can set `AGENT_MEMORYD_VERSION`, usually to a semver tag such as `v0.1.0`. Without that override, the build task uses `git describe --tags --always --dirty`.
+Release builds can set `MEMORYD_VERSION`, usually to a semver tag such as `v0.1.0`. Without that override, the build task uses `git describe --tags --always --dirty`.
 
 Then initialize:
 
@@ -101,12 +101,12 @@ In an interactive terminal, `init` asks whether to start fresh or import existin
 ```sh
 ./memoryd init --fresh
 ./memoryd init --import ~/notes/agent
-./memoryd init --import ~/.local/share/agent-memoryd/memories.jsonl
+./memoryd init --import ~/.local/share/memoryd/memories.jsonl
 ```
 
 The import path may be an agent-memoryd JSONL store, a markdown file, a text file, or a directory containing markdown/text files. JSONL records keep their existing ids, kinds, projects, sources, summaries, and bodies. Markdown and text imports become `note` records with stable `import:<hash>` ids and source paths, so running the same import again updates the same records instead of duplicating them.
 
-`init` writes executable hooks under `~/.local/share/agent-memoryd/git-hooks` and sets `git config --global core.hooksPath` to that directory when the global value is unset or already points at the managed directory. If another global hook path is already configured, `init` leaves it alone and reports that in `git_hooks`.
+`init` writes executable hooks under `~/.local/share/memoryd/git-hooks` and sets `git config --global core.hooksPath` to that directory when the global value is unset or already points at the managed directory. If another global hook path is already configured, `init` leaves it alone and reports that in `git_hooks`.
 
 On macOS, `init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, bootstraps it with launchd, and kickstarts `memoryd daemon`. On other platforms, launchd setup is skipped.
 
@@ -119,11 +119,11 @@ Use `--no-daemon` if you only want to create the local files and Git hooks witho
 By default the data root is:
 
 ```text
-~/.local/share/agent-memoryd
+~/.local/share/memoryd
 ```
 
-Set `AGENT_MEMORYD_HOME` before running commands to use another root:
+Set `MEMORYD_HOME` before running commands to use another root:
 
 ```sh
-AGENT_MEMORYD_HOME=/tmp/agent-memoryd ./memoryd init
+MEMORYD_HOME=/tmp/memoryd ./memoryd init
 ```

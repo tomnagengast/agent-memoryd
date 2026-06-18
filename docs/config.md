@@ -3,13 +3,13 @@
 `memoryd` reads agent-memoryd JSON config from:
 
 ```text
-$AGENT_MEMORYD_HOME/config.json
+$MEMORYD_HOME/config.json
 ```
 
-When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
+When `MEMORYD_HOME` is unset, the root defaults to:
 
 ```text
-~/.local/share/agent-memoryd
+~/.local/share/memoryd
 ```
 
 `memoryd init` writes a default config and a `resources.json` manifest in the same root.
@@ -18,9 +18,9 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 ```json
 {
-  "root": "/Users/you/.local/share/agent-memoryd",
-  "zvec_path": "/Users/you/.local/share/agent-memoryd/zvec",
-  "spool_dir": "/Users/you/.local/share/agent-memoryd/spool",
+  "root": "/Users/you/.local/share/memoryd",
+  "zvec_path": "/Users/you/.local/share/memoryd/zvec",
+  "spool_dir": "/Users/you/.local/share/memoryd/spool",
   "transcript_roots": [
     "/Users/you/.claude/projects",
     "/Users/you/.codex/sessions"

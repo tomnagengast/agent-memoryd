@@ -1,6 +1,6 @@
 ---
 name: agent-memoryd
-description: Local-first memory store and MCP server for coding agents — search, get, add, forget, and reflect over a zvec-backed store owned by the daemon, plus transcript and git ingestion into distilled memories. Use when operating the memory store from the CLI (memoryd add/search/get/forget/reindex) or its MCP tools; configuring or debugging the daemon, launchd service, git hooks, embedder, summarizer, or resource manifest; bulk-importing markdown/text/JSONL notes; reasoning about the record/store data model and its gotchas; or developing the agent-memoryd Go codebase. Triggers include the memoryd binary, agent-memoryd MCP server, the ~/.local/share/agent-memoryd data root, zvec store, AGENT_MEMORYD_HOME, or the tomnagengast/agent-memoryd repo.
+description: Local-first memory store and MCP server for coding agents — search, get, add, forget, and reflect over a zvec-backed store owned by the daemon, plus transcript and git ingestion into distilled memories. Use when operating the memory store from the CLI (memoryd add/search/get/forget/reindex) or its MCP tools; configuring or debugging the daemon, launchd service, git hooks, embedder, summarizer, or resource manifest; bulk-importing markdown/text/JSONL notes; reasoning about the record/store data model and its gotchas; or developing the agent-memoryd Go codebase. Triggers include the memoryd binary, agent-memoryd MCP server, the ~/.local/share/memoryd data root, zvec store, MEMORYD_HOME, or the tomnagengast/agent-memoryd repo.
 ---
 
 # agent-memoryd
@@ -10,7 +10,7 @@ A small local service + MCP server that gives coding agents durable, searchable 
 ## Orientation
 
 - Binary: `memoryd` (installed at `~/.local/bin/memoryd`; in-repo build is `./memoryd`).
-- Data root: `$AGENT_MEMORYD_HOME` or `~/.local/share/agent-memoryd`. Holds `config.json`, `resources.json` (manifest), `spool/`, `git-hooks/`, `logs/`, `zvec/`, and the daemon socket when running.
+- Data root: `$MEMORYD_HOME` or `~/.local/share/memoryd`. Holds `config.json`, `resources.json` (manifest), `spool/`, `git-hooks/`, `logs/`, `zvec/`, and the daemon socket when running.
 - Interfaces: CLI subcommands and the stdio MCP server (`memoryd mcp`). Both read/write the same store.
 - Repo: `github.com/tomnagengast/agent-memoryd`; Go, managed with `mise`; docs under `docs/`.
 
@@ -18,7 +18,7 @@ Check state first with `memoryd status` (config, store count, service, git hooks
 
 ## Critical facts (read before writing anything)
 
-1. The daemon is the single zvec owner. CLI commands and MCP tools route store operations over `$AGENT_MEMORYD_HOME/agent-memoryd.sock`; if the daemon is not running, store operations fail.
+1. The daemon is the single zvec owner. CLI commands and MCP tools route store operations over `$MEMORYD_HOME/memoryd.sock`; if the daemon is not running, store operations fail.
 2. `add` is an **upsert by `id`**. Pass a stable `id` for idempotency; **omitting `id` in a loop creates duplicates**.
 3. **CLI `add` dash gotcha**: the body is a trailing positional arg. A body starting with `-` (markdown bullet) is parsed as a flag (`unknown shorthand flag`). Pass it after a `--` sentinel and use `--flag=value` form. MCP `add` is immune (body is a JSON field).
 4. Direct `add` stores the body **verbatim**. Only daemon producers and `reflect` summarize.

@@ -15,7 +15,7 @@ memoryd init
 The managed hook directory defaults to:
 
 ```text
-~/.local/share/agent-memoryd/git-hooks
+~/.local/share/memoryd/git-hooks
 ```
 
 `init` installs `post-commit`, `post-merge`, and `post-rewrite` there. If global `core.hooksPath` is unset or already points at that directory, `init` configures Git to use the managed hooks. If another global hook path is already set, `init` does not overwrite it.
@@ -39,7 +39,7 @@ git config --global --get core.hooksPath
 
 Setting a global `core.hooksPath` changes where Git looks for hooks. To avoid skipping existing repository-local hooks, the managed hooks first look for an executable hook with the same name in the repository's normal hooks directory and run it before enqueueing the memory event.
 
-If you already have a global hooks directory, `memoryd init` leaves it configured. In that case you can either chain to `~/.local/share/agent-memoryd/git-hooks` from your existing global hooks or enqueue commits manually.
+If you already have a global hooks directory, `memoryd init` leaves it configured. In that case you can either chain to `~/.local/share/memoryd/git-hooks` from your existing global hooks or enqueue commits manually.
 
 ## Install In One Repository
 

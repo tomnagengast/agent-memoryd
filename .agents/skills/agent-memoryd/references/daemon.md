@@ -11,11 +11,11 @@ Table of contents
 
 ## Config schema and location
 
-Config is JSON at `$AGENT_MEMORYD_HOME/config.json`; when `AGENT_MEMORYD_HOME` is unset the root defaults to `~/.local/share/agent-memoryd`. `init` writes defaults. Missing keys fall back to built-in defaults; `~/` and `$ENV` are expanded on load.
+Config is JSON at `$MEMORYD_HOME/config.json`; when `MEMORYD_HOME` is unset the root defaults to `~/.local/share/memoryd`. `init` writes defaults. Missing keys fall back to built-in defaults; `~/` and `$ENV` are expanded on load.
 
 | key | default | meaning |
 |---|---|---|
-| `root` | `~/.local/share/agent-memoryd` | managed data dir; **`uninstall --yes` deletes it** |
+| `root` | `~/.local/share/memoryd` | managed data dir; **`uninstall --yes` deletes it** |
 | `store_path` | `<root>/memories.jsonl` | legacy migration path only |
 | `zvec_path` | `<root>/zvec` | durable zvec store |
 | `spool_dir` | `<root>/spool` | queued git events |
@@ -67,7 +67,7 @@ On failure the daemon logs the command failure and output byte counts, but **red
 
 ## launchd and logs
 
-`init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, then `launchctl bootstrap` + `kickstart`. The plist captures `AGENT_MEMORYD_HOME` and the installing shell's `PATH` so `codex` (or your summarizer) resolves under launchd. Logs go to `<root>/logs/memoryd.{out,err}.log`. Render without installing: `memoryd launchd-plist --bin /abs/path/to/memoryd`.
+`init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, then `launchctl bootstrap` + `kickstart`. The plist captures `MEMORYD_HOME` and the installing shell's `PATH` so `codex` (or your summarizer) resolves under launchd. Logs go to `<root>/logs/memoryd.{out,err}.log`. Render without installing: `memoryd launchd-plist --bin /abs/path/to/memoryd`.
 
 ## Privacy
 

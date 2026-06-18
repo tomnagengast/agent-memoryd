@@ -13,10 +13,10 @@ import (
 func TestSanitizePK(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		input    string
-		want     string
-		maxLen   int // if > 0, assert len(got) <= maxLen
-		wantLen  int // if > 0, assert exact len
+		input   string
+		want    string
+		maxLen  int // if > 0, assert len(got) <= maxLen
+		wantLen int // if > 0, assert exact len
 	}{
 		// zvec-rejected characters -> "_"
 		{"note:alpha", "note_alpha", 0, 0},

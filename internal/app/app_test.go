@@ -170,7 +170,7 @@ func TestLatestTranscriptReturnsNewestJSONL(t *testing.T) {
 }
 
 func TestDialOrOpenRequiresDaemon(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", shortSocketDir(t))
+	t.Setenv("MEMORYD_HOME", shortSocketDir(t))
 
 	_, store, err := dialOrOpen()
 	if !errors.Is(err, errDaemonNotRunning) {
@@ -184,7 +184,7 @@ func TestDialOrOpenRequiresDaemon(t *testing.T) {
 func TestDialOrOpenUsesDaemonSocket(t *testing.T) {
 	ctx := context.Background()
 	root := shortSocketDir(t)
-	t.Setenv("AGENT_MEMORYD_HOME", root)
+	t.Setenv("MEMORYD_HOME", root)
 	cfg := config.Config{Root: root}
 	stop := startFakeStoreRPC(t, cfg, newFakeMemoryAPI())
 	defer stop()

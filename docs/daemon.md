@@ -18,7 +18,7 @@ Run one pass without staying resident:
 
 ## Store Ownership
 
-The daemon holds the zvec collection exclusively for its lifetime. It serves all store operations (add, search, get, forget, list, status, reindex) over a Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock`. CLI commands and the MCP server route through that socket and never open zvec directly.
+The daemon holds the zvec collection exclusively for its lifetime. It serves all store operations (add, search, get, forget, list, status, reindex) over a Unix socket at `$MEMORYD_HOME/memoryd.sock`. CLI commands and the MCP server route through that socket and never open zvec directly.
 
 ## Transcript Ingestion
 
@@ -84,7 +84,7 @@ If the summarizer command fails, daemon logs include the command failure and out
 
 It then runs `launchctl bootstrap` and `launchctl kickstart` so the daemon is up immediately.
 
-The plist includes `AGENT_MEMORYD_HOME` and the PATH from the shell that ran `init`, so default commands such as `codex` can be found when launchd starts the daemon.
+The plist includes `MEMORYD_HOME` and the PATH from the shell that ran `init`, so default commands such as `codex` can be found when launchd starts the daemon.
 
 Render a macOS LaunchAgent plist without installing it:
 
@@ -99,7 +99,7 @@ The command writes plist XML to stdout for inspection or advanced manual install
 The rendered LaunchAgent writes stdout and stderr logs under:
 
 ```text
-$AGENT_MEMORYD_HOME/logs
+$MEMORYD_HOME/logs
 ```
 
 ## Privacy

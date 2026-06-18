@@ -119,7 +119,7 @@ func startTestServer(t *testing.T, api memory.API) (config.Config, context.Cance
 	t.Cleanup(func() {
 		cancel()
 		<-done
-		os.Remove(filepath.Join(dir, "agent-memoryd.sock"))
+		os.Remove(filepath.Join(dir, "memoryd.sock"))
 	})
 
 	return cfg, cancel

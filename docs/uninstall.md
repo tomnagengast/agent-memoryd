@@ -39,10 +39,10 @@ If global `core.hooksPath` points at the managed hook directory, uninstall unset
 `uninstall --yes` does not remove:
 
 - The repository checkout or built binaries outside the data root.
-- The native library installed to `~/.local/lib/agent-memoryd/`. Remove this manually if you no longer need it:
+- The native library installed to `~/.local/lib/memoryd/`. Remove this manually if you no longer need it:
 
   ```sh
-  rm -rf ~/.local/lib/agent-memoryd
+  rm -rf ~/.local/lib/memoryd
   ```
 
 - The installed binary at `~/.local/bin/memoryd`. Remove it manually if desired:
@@ -51,7 +51,7 @@ If global `core.hooksPath` points at the managed hook directory, uninstall unset
   rm ~/.local/bin/memoryd
   ```
 
-- The daemon socket `$AGENT_MEMORYD_HOME/agent-memoryd.sock` is removed at daemon shutdown. If the daemon was killed and the socket remains, it is cleaned up automatically on next daemon start.
+- The daemon socket `$MEMORYD_HOME/memoryd.sock` is removed at daemon shutdown. If the daemon was killed and the socket remains, it is cleaned up automatically on next daemon start.
 
 - Downloaded zvec libraries in the repository `./lib/` directory.
 - Git hooks you manually copied into other repositories, or a different global hooks directory you configured yourself.

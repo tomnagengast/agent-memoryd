@@ -53,7 +53,7 @@ The IPC server and client (daemon socket) live in `internal/storerpc`.
 
 `mise run build` always uses `CGO_ENABLED=1` and links against the zvec native library in `./lib/`. There is no pure-Go fallback build. `mise run zvec-libs` must be run before `mise run build`.
 
-`mise run install-local` builds the binary with an rpath pointing at `~/.local/lib/agent-memoryd/` (not the working tree `./lib/` directory) and copies the native library there before installing the binary to `~/.local/bin/`. This makes the installed binary independent of the repository checkout location.
+`mise run install-local` builds the binary with an rpath pointing at `~/.local/lib/memoryd/` (not the working tree `./lib/` directory) and copies the native library there before installing the binary to `~/.local/bin/`. This makes the installed binary independent of the repository checkout location.
 
 ## Design Principles
 

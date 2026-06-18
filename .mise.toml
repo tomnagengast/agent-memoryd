@@ -26,7 +26,7 @@ fi
 [tasks.build]
 description = "Build the memoryd binary (always cgo + zvec)"
 run = '''
-version="${AGENT_MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+version="${MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
 date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 case "$(uname -s)-$(uname -m)" in
@@ -54,15 +54,15 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 # Copy native lib to stable runtime location
-mkdir -p "${HOME}/.local/lib/agent-memoryd"
-cp "./lib/${zvec_platform}/libzvec_c_api.${libext}" "${HOME}/.local/lib/agent-memoryd/"
+mkdir -p "${HOME}/.local/lib/memoryd"
+cp "./lib/${zvec_platform}/libzvec_c_api.${libext}" "${HOME}/.local/lib/memoryd/"
 
 # Build binary with rpath pointing at installed lib location (not working tree)
-version="${AGENT_MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+version="${MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
 date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CGO_CFLAGS="-I$(pwd)/lib/include" \
-CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,${HOME}/.local/lib/agent-memoryd" \
+CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,${HOME}/.local/lib/memoryd" \
 CGO_ENABLED=1 go build \
   -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
   -o ./memoryd \
@@ -76,7 +76,7 @@ chmod 755 "${tmp}"
 mv "${tmp}" "${HOME}/.local/bin/memoryd"
 
 echo "Installed: ${HOME}/.local/bin/memoryd"
-echo "Native lib: ${HOME}/.local/lib/agent-memoryd/libzvec_c_api.${libext}"
+echo "Native lib: ${HOME}/.local/lib/memoryd/libzvec_c_api.${libext}"
 '''
 
 [tasks.zvec-libs]

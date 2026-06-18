@@ -7,14 +7,14 @@
   "command": "/absolute/path/to/memoryd",
   "args": ["mcp"],
   "env": {
-    "AGENT_MEMORYD_HOME": "/Users/you/.local/share/agent-memoryd"
+    "MEMORYD_HOME": "/Users/you/.local/share/memoryd"
   }
 }
 ```
 
 ## Store Access
 
-The MCP server connects to the daemon's Unix socket at `$AGENT_MEMORYD_HOME/agent-memoryd.sock` and routes all store operations through the daemon. The daemon must be running; MCP never opens the zvec collection directly.
+The MCP server connects to the daemon's Unix socket at `$MEMORYD_HOME/memoryd.sock` and routes all store operations through the daemon. The daemon must be running; MCP never opens the zvec collection directly.
 
 ## Tools
 

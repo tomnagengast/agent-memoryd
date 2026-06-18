@@ -157,7 +157,7 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <true/>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>AGENT_MEMORYD_HOME</key>
+    <key>MEMORYD_HOME</key>
     <string>{{ .Root }}</string>
     <key>PATH</key>
     <string>{{ .Path }}</string>

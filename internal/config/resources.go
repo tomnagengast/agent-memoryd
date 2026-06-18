@@ -131,7 +131,7 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "resource manifest", Type: "manifest-file", Path: ManifestPath(cfg.Root), Managed: true},
 		{Name: "ingest state", Type: "data-file", Path: IngestStatePath(cfg.Root), Managed: true},
 		{Name: "zvec index", Type: "index-directory", Path: cfg.ZvecPath, Managed: true},
-		{Name: "store socket", Type: "socket", Path: filepath.Join(cfg.Root, "agent-memoryd.sock"), Managed: true},
+		{Name: "store socket", Type: "socket", Path: filepath.Join(cfg.Root, "memoryd.sock"), Managed: true},
 		{Name: "git event spool", Type: "directory", Path: cfg.SpoolDir, Managed: true},
 		{Name: "global git hooks", Type: "directory", Path: gitHooksDir, Managed: true},
 		{Name: "global git post-commit hook", Type: "executable-file", Path: filepath.Join(gitHooksDir, "post-commit"), Managed: true},

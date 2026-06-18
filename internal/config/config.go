@@ -219,10 +219,10 @@ func ConfigPath(root string) string {
 }
 
 func dataRoot() string {
-	if root := os.Getenv("AGENT_MEMORYD_HOME"); root != "" {
+	if root := os.Getenv("MEMORYD_HOME"); root != "" {
 		return expand(root)
 	}
-	return filepath.Join(homeDir(), ".local", "share", "agent-memoryd")
+	return filepath.Join(homeDir(), ".local", "share", "memoryd")
 }
 
 func homeDir() string {

@@ -10,7 +10,7 @@ Table of contents
 
 ## Record schema
 
-The durable store is a zvec collection under `$AGENT_MEMORYD_HOME/zvec`. Each record:
+The durable store is a zvec collection under `$MEMORYD_HOME/zvec`. Each record:
 
 | field | notes |
 |---|---|
@@ -69,5 +69,5 @@ zvec is the **durable source of truth**. A legacy `memories.jsonl` in the data r
 
 - **Bullet-leading bodies break CLI add.** A body starting with `-` (markdown bullet) is parsed as a flag by cobra: `unknown shorthand flag: ' '`. Pass the body after a `--` sentinel and use `--flag=value` form. See [bulk-import.md](bulk-import.md).
 - **Omitting `id` in a loop duplicates.** Always pass a stable `id` for idempotent batches.
-- **`uninstall --yes` deletes the whole `root` directory** (including `zvec/`). Keep `root` dedicated to agent-memoryd; back up before destructive ops.
+- **`uninstall --yes` deletes the whole `root` directory** (including `zvec/`). Keep `root` dedicated to memoryd; back up before destructive ops.
 - **CLI output is JSON** on stdout (pretty-printed). Pipe through `jq`/`python3` to extract fields.

@@ -69,7 +69,7 @@ Configure your MCP client to launch the binary with the `mcp` argument. A typica
   "command": "/absolute/path/to/memoryd",
   "args": ["mcp"],
   "env": {
-    "AGENT_MEMORYD_HOME": "/Users/you/.local/share/agent-memoryd"
+    "MEMORYD_HOME": "/Users/you/.local/share/memoryd"
   }
 }
 ```

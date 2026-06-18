@@ -11,13 +11,13 @@
       "type": "stdio",
       "command": "memoryd",
       "args": ["mcp"],
-      "env": { "AGENT_MEMORYD_HOME": "/Users/you/.local/share/agent-memoryd" }
+      "env": { "MEMORYD_HOME": "/Users/you/.local/share/memoryd" }
     }
   }
 }
 ```
 
-`AGENT_MEMORYD_HOME` is optional; without it the server uses the default root. The tool resolves the same `config.json`/store as the CLI.
+`MEMORYD_HOME` is optional; without it the server uses the default root. The tool resolves the same `config.json`/store as the CLI.
 
 ## Tools
 

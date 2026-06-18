@@ -22,7 +22,7 @@ import (
 
 // SocketPath returns the Unix socket path for the given config.
 func SocketPath(cfg config.Config) string {
-	return filepath.Join(cfg.Root, "agent-memoryd.sock")
+	return filepath.Join(cfg.Root, "memoryd.sock")
 }
 
 // Probe returns true if a daemon is already listening at the socket path.
@@ -234,7 +234,9 @@ func (s *Server) dispatch(ctx context.Context, req Request) (any, *RPCError) {
 		if err != nil {
 			return nil, errToRPC(err)
 		}
-		return struct{ Count int `json:"count"` }{Count: count}, nil
+		return struct {
+			Count int `json:"count"`
+		}{Count: count}, nil
 
 	case "optimize":
 		if err := s.api.Optimize(ctx); err != nil {
