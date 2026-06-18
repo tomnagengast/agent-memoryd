@@ -96,7 +96,7 @@ Create the local data root, default config, zvec store, git spool, managed globa
 ./memoryd init
 ```
 
-In an interactive terminal, `init` asks whether to start fresh or import existing memories. Non-interactive installs should pass one of these flags:
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, and start the daemon service now. Non-interactive installs should pass one of these flags:
 
 ```sh
 ./memoryd init --fresh

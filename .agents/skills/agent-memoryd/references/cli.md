@@ -80,7 +80,7 @@ memoryd init [flags]
   --import-project string  project for imported markdown/text records
 ```
 
-Creates the data root, `config.json`, zvec store, git spool, managed global git hooks, logs dir, and `resources.json`. On macOS it also installs and starts the LaunchAgent (unless `--no-daemon`). Interactive runs prompt fresh-vs-import; scripts use `--fresh`/`--import`. `--fresh` and `--import` are mutually exclusive. See [bulk-import.md](bulk-import.md).
+Creates the data root, `config.json`, zvec store, git spool, managed global git hooks, logs dir, and `resources.json`. On macOS it also installs and starts the LaunchAgent unless skipped. Interactive runs use a guided onboarding flow for fresh-vs-import setup, default transcript ingestion roots, and daemon startup; scripts use `--fresh`/`--import`/`--no-daemon`. `--fresh` and `--import` are mutually exclusive. See [bulk-import.md](bulk-import.md).
 
 Note: `--fresh`/`--import`/`--import-project` are recent source flags. If the installed binary lacks them (`init --help` shows only `--no-daemon`/`--path`), rebuild: `mise run build && mise run install-local`.
 

@@ -16,7 +16,7 @@ mise run build
 ./memoryd status
 ```
 
-In an interactive terminal, `init` asks whether to start fresh or import existing memories. Use `./memoryd init --fresh` for a non-interactive fresh install, or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, and start the daemon service now. Use `./memoryd init --fresh` for a non-interactive fresh install, or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
 
 `init` also installs managed global Git hooks via `git config --global core.hooksPath` when no global hook path is already configured. On macOS, it installs and starts the managed launchd daemon. Use `./memoryd init --no-daemon` if you only want to skip the daemon service.
 

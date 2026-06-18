@@ -210,6 +210,39 @@ func TestDialOrOpenUsesDaemonSocket(t *testing.T) {
 	}
 }
 
+func TestDefaultInitOnboardingHonorsFlags(t *testing.T) {
+	choice := defaultInitOnboarding(true, "", "", true)
+	if choice.MemoryMode != "fresh" || choice.StartDaemon {
+		t.Fatalf("fresh/no-daemon choice = %#v", choice)
+	}
+	opts := choice.MemoryImportOptions()
+	if !opts.Fresh || opts.ImportPath != "" {
+		t.Fatalf("memory options = %#v, want fresh without import", opts)
+	}
+
+	choice = defaultInitOnboarding(false, "~/notes/agent", "agent", false)
+	if choice.MemoryMode != "import" || !choice.StartDaemon {
+		t.Fatalf("import choice = %#v", choice)
+	}
+	opts = choice.MemoryImportOptions()
+	if opts.Fresh || opts.ImportPath != "~/notes/agent" || opts.ImportProject != "agent" {
+		t.Fatalf("memory options = %#v, want import options", opts)
+	}
+}
+
+func TestInitOnboardingCanDisableTranscriptRoots(t *testing.T) {
+	choice := defaultInitOnboarding(false, "", "", false)
+	choice.TranscriptMode = "disabled"
+	cfg := choice.Config(config.Default())
+	if len(cfg.TranscriptRoots) != 0 {
+		t.Fatalf("transcript roots = %#v, want disabled", cfg.TranscriptRoots)
+	}
+	status := choice.Status()
+	if status["transcript_roots"] != "disabled" {
+		t.Fatalf("status = %#v, want disabled transcript mode", status)
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	original := os.Stdout
 	read, write, err := os.Pipe()

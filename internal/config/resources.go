@@ -28,7 +28,10 @@ type Manifest struct {
 }
 
 func Init(path string) (Config, Manifest, error) {
-	cfg := Default()
+	return InitWithConfig(path, Default())
+}
+
+func InitWithConfig(path string, cfg Config) (Config, Manifest, error) {
 	if path == "" {
 		path = ConfigPath(cfg.Root)
 	}

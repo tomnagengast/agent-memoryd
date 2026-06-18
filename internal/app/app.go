@@ -100,7 +100,15 @@ func newInitCommand() *cobra.Command {
 			if fresh && importPath != "" {
 				return fmt.Errorf("--fresh and --import cannot be used together")
 			}
-			cfg, manifest, err := config.Init(path)
+			onboarding := defaultInitOnboarding(fresh, importPath, importProject, noDaemon)
+			if shouldPromptInitOnboarding(cmd) {
+				var err error
+				onboarding, err = promptInitOnboarding(onboarding)
+				if err != nil {
+					return err
+				}
+			}
+			cfg, manifest, err := config.InitWithConfig(path, onboarding.Config(config.Default()))
 			if err != nil {
 				return err
 			}
@@ -116,14 +124,10 @@ func newInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			memoryOpts := initMemoryImportOptions{
-				Fresh:         fresh,
-				ImportPath:    importPath,
-				ImportProject: importProject,
-			}
+			memoryOpts := onboarding.MemoryImportOptions()
 			var memoryImport initMemoryImportStatus
-			var service any = map[string]any{"started": false, "skipped": "disabled by --no-daemon"}
-			if noDaemon {
+			var service any = map[string]any{"started": false, "skipped": "disabled by init choice"}
+			if !onboarding.StartDaemon {
 				memoryImport, err = runInitMemoryImportWithoutDaemon(memoryOpts)
 				if err != nil {
 					return err
@@ -169,6 +173,7 @@ func newInitCommand() *cobra.Command {
 				"service":       service,
 				"git_hooks":     gitHooks,
 				"memory_import": memoryImport,
+				"onboarding":    onboarding.Status(),
 			})
 		},
 	}
@@ -576,6 +581,72 @@ type initMemoryImportStatus struct {
 	Existing int               `json:"existing,omitempty"`
 }
 
+type initOnboarding struct {
+	Interactive    bool
+	MemoryMode     string
+	ImportPath     string
+	ImportProject  string
+	StartDaemon    bool
+	TranscriptMode string
+}
+
+func defaultInitOnboarding(fresh bool, importPath, importProject string, noDaemon bool) initOnboarding {
+	memoryMode := "prompt"
+	if fresh {
+		memoryMode = "fresh"
+	}
+	if importPath != "" {
+		memoryMode = "import"
+	}
+	return initOnboarding{
+		MemoryMode:     memoryMode,
+		ImportPath:     importPath,
+		ImportProject:  importProject,
+		StartDaemon:    !noDaemon,
+		TranscriptMode: "default",
+	}
+}
+
+func shouldPromptInitOnboarding(cmd *cobra.Command) bool {
+	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
+		return false
+	}
+	for _, flag := range []string{"fresh", "import", "import-project", "no-daemon"} {
+		if cmd.Flags().Changed(flag) {
+			return false
+		}
+	}
+	return true
+}
+
+func (o initOnboarding) Config(cfg config.Config) config.Config {
+	if o.TranscriptMode == "disabled" {
+		cfg.TranscriptRoots = []string{}
+	}
+	return cfg
+}
+
+func (o initOnboarding) MemoryImportOptions() initMemoryImportOptions {
+	return initMemoryImportOptions{
+		Fresh:         o.MemoryMode == "fresh",
+		ImportPath:    o.ImportPath,
+		ImportProject: o.ImportProject,
+	}
+}
+
+func (o initOnboarding) Status() map[string]any {
+	memoryMode := o.MemoryMode
+	if memoryMode == "prompt" {
+		memoryMode = "fresh"
+	}
+	return map[string]any{
+		"interactive":      o.Interactive,
+		"memory_mode":      memoryMode,
+		"start_daemon":     o.StartDaemon,
+		"transcript_roots": o.TranscriptMode,
+	}
+}
+
 func runInitMemoryImport(ctx context.Context, store memory.API, opts initMemoryImportOptions) (initMemoryImportStatus, error) {
 	if opts.ImportPath != "" {
 		result, err := importmem.Import(ctx, store, importmem.Options{Path: opts.ImportPath, Project: opts.ImportProject})
@@ -597,18 +668,7 @@ func runInitMemoryImport(ctx context.Context, store memory.API, opts initMemoryI
 	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
 		return initMemoryImportStatus{Mode: "fresh", Skipped: "non-interactive default"}, nil
 	}
-	choice, err := promptMemoryImport()
-	if err != nil {
-		return initMemoryImportStatus{}, err
-	}
-	if choice.ImportPath == "" {
-		return initMemoryImportStatus{Mode: "fresh"}, nil
-	}
-	result, err := importmem.Import(ctx, store, importmem.Options{Path: choice.ImportPath, Project: choice.ImportProject})
-	if err != nil {
-		return initMemoryImportStatus{}, err
-	}
-	return initMemoryImportStatus{Mode: "import", Result: &result}, nil
+	return initMemoryImportStatus{Mode: "fresh"}, nil
 }
 
 func runInitMemoryImportWithoutDaemon(opts initMemoryImportOptions) (initMemoryImportStatus, error) {
@@ -622,28 +682,49 @@ func runInitMemoryImportWithoutDaemon(opts initMemoryImportOptions) (initMemoryI
 	return status, nil
 }
 
-type memoryImportChoice struct {
-	ImportPath    string
-	ImportProject string
-}
-
-func promptMemoryImport() (memoryImportChoice, error) {
-	mode := "fresh"
-	if err := huh.NewSelect[string]().
-		Title("Memory setup").
-		Options(
-			huh.NewOption("Start fresh", "fresh"),
-			huh.NewOption("Import existing memories", "import"),
-		).
-		Value(&mode).
-		Run(); err != nil {
-		return memoryImportChoice{}, err
+func promptInitOnboarding(initial initOnboarding) (initOnboarding, error) {
+	choice := initial
+	choice.Interactive = true
+	if choice.MemoryMode == "prompt" {
+		choice.MemoryMode = "fresh"
 	}
-	if mode != "import" {
-		return memoryImportChoice{}, nil
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Memory setup").
+			Description("Start empty or import JSONL, markdown, or text memories after the daemon starts.").
+			Options(
+				huh.NewOption("Start fresh", "fresh"),
+				huh.NewOption("Import existing memories", "import"),
+			).
+			Value(&choice.MemoryMode),
+		huh.NewSelect[string]().
+			Title("Transcript ingestion").
+			Description("The daemon can summarize idle Claude, Codex, and opencode transcripts.").
+			Options(
+				huh.NewOption("Enable default transcript roots", "default"),
+				huh.NewOption("Disable transcript ingestion", "disabled"),
+			).
+			Value(&choice.TranscriptMode),
+		huh.NewConfirm().
+			Title("Start the background daemon now?").
+			Description("The daemon owns zvec and serves CLI/MCP store operations over the local socket.").
+			Affirmative("Start daemon").
+			Negative("Skip service").
+			Value(&choice.StartDaemon),
+	))
+	applyHuhOptions(form)
+	if err := form.Run(); err != nil {
+		return initOnboarding{}, err
 	}
-	var choice memoryImportChoice
-	if err := huh.NewForm(huh.NewGroup(
+	if choice.MemoryMode == "import" && !choice.StartDaemon {
+		return initOnboarding{}, fmt.Errorf("import requires the daemon; choose fresh setup or start the background daemon")
+	}
+	if choice.MemoryMode != "import" {
+		choice.ImportPath = ""
+		choice.ImportProject = ""
+		return choice, nil
+	}
+	importForm := huh.NewForm(huh.NewGroup(
 		huh.NewInput().
 			Title("Import path").
 			Description("JSONL file, markdown file, text file, or directory").
@@ -663,12 +744,20 @@ func promptMemoryImport() (memoryImportChoice, error) {
 			Title("Project for text memories").
 			Description("Optional; JSONL records keep their own project values").
 			Value(&choice.ImportProject),
-	)).Run(); err != nil {
-		return memoryImportChoice{}, err
+	))
+	applyHuhOptions(importForm)
+	if err := importForm.Run(); err != nil {
+		return initOnboarding{}, err
 	}
 	choice.ImportPath = strings.TrimSpace(choice.ImportPath)
 	choice.ImportProject = strings.TrimSpace(choice.ImportProject)
 	return choice, nil
+}
+
+func applyHuhOptions(form *huh.Form) {
+	if os.Getenv("MEMORYD_ACCESSIBLE") != "" || os.Getenv("ACCESSIBLE") != "" {
+		form.WithAccessible(true)
+	}
 }
 
 func isTerminal(file *os.File) bool {

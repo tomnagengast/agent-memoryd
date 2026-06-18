@@ -131,6 +131,31 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	}
 }
 
+func TestInitWithConfigPersistsChosenTranscriptRoots(t *testing.T) {
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
+	cfg := Default()
+	cfg.TranscriptRoots = []string{}
+
+	written, _, err := InitWithConfig("", cfg)
+	if err != nil {
+		t.Fatalf("init with config: %v", err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if len(loaded.TranscriptRoots) != 0 {
+		t.Fatalf("loaded transcript roots = %#v, want disabled", loaded.TranscriptRoots)
+	}
+	data, err := os.ReadFile(ConfigPath(written.Root))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"transcript_roots": []`) {
+		t.Fatalf("config did not persist empty transcript_roots: %s", data)
+	}
+}
+
 func TestConfigMarshalJSONUsesDurationStrings(t *testing.T) {
 	cfg := Default()
 	data, err := json.Marshal(cfg)

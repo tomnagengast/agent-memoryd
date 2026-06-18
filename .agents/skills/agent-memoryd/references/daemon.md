@@ -11,7 +11,7 @@ Table of contents
 
 ## Config schema and location
 
-Config is JSON at `$MEMORYD_HOME/config.json`; when `MEMORYD_HOME` is unset the root defaults to `~/.local/share/memoryd`. `init` writes defaults. Missing keys fall back to built-in defaults; `~/` and `$ENV` are expanded on load.
+Config is JSON at `$MEMORYD_HOME/config.json`; when `MEMORYD_HOME` is unset the root defaults to `~/.local/share/memoryd`. Interactive `init` writes choices from the onboarding flow; scripted `init` writes defaults plus any explicit flags. Missing keys fall back to built-in defaults; `~/` and `$ENV` are expanded on load.
 
 | key | default | meaning |
 |---|---|---|
@@ -19,7 +19,7 @@ Config is JSON at `$MEMORYD_HOME/config.json`; when `MEMORYD_HOME` is unset the 
 | `store_path` | `<root>/memories.jsonl` | legacy migration path only |
 | `zvec_path` | `<root>/zvec` | durable zvec store |
 | `spool_dir` | `<root>/spool` | queued git events |
-| `transcript_roots` | `~/.claude/projects`, `~/.codex/sessions` | dirs scanned for idle `.jsonl` transcripts |
+| `transcript_roots` | `~/.claude/projects`, `~/.codex/sessions`, `~/.local/share/opencode` | dirs scanned for idle `.jsonl` transcripts |
 | `summarizer_command` | `codex exec --sandbox read-only --skip-git-repo-check --ephemeral -` | distills source material into memories |
 | `summarizer_timeout` | `5m0s` | bound per summarizer run |
 | `embedder_command` | empty | optional command that returns JSON float vectors |
