@@ -1,19 +1,19 @@
 # Daemon
 
-`agent-memoryd daemon` runs the resident ingest worker. It processes queued git events and scans configured transcript roots on a polling interval.
+`memoryd daemon` runs the resident ingest worker. It processes queued git events and scans configured transcript roots on a polling interval.
 
-On macOS, `agent-memoryd init` installs and starts this daemon through launchd by default. Use `agent-memoryd init --no-daemon` to skip service setup.
+On macOS, `memoryd init` installs and starts this daemon through launchd by default. Use `memoryd init --no-daemon` to skip service setup.
 
 Run the daemon in the foreground:
 
 ```sh
-./agent-memoryd daemon
+./memoryd daemon
 ```
 
 Run one pass without staying resident:
 
 ```sh
-./agent-memoryd scan-once
+./memoryd scan-once
 ```
 
 ## Transcript Ingestion
@@ -39,7 +39,7 @@ The MCP `reflect` tool uses the same summarizer behavior on demand. It can summa
 Git hooks should not summarize commits inline. They enqueue a small event file with the repository path and commit sha:
 
 ```sh
-./agent-memoryd enqueue-git \
+./memoryd enqueue-git \
   --repo "$(git rev-parse --show-toplevel)" \
   --sha "$(git rev-parse HEAD)"
 ```
@@ -85,7 +85,7 @@ The plist includes `AGENT_MEMORYD_HOME` and the PATH from the shell that ran `in
 Render a macOS LaunchAgent plist without installing it:
 
 ```sh
-./agent-memoryd launchd-plist --bin /absolute/path/to/agent-memoryd
+./memoryd launchd-plist --bin /absolute/path/to/memoryd
 ```
 
 The command writes plist XML to stdout for inspection or advanced manual installs.

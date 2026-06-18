@@ -9,32 +9,32 @@ Local memory daemon for coding agents.
 ```sh
 mise install
 mise run build
-./agent-memoryd --help
-./agent-memoryd --version
-./agent-memoryd init
-./agent-memoryd status
+./memoryd --help
+./memoryd --version
+./memoryd init
+./memoryd status
 ```
 
-In an interactive terminal, `init` asks whether to start fresh or import existing memories. Use `./agent-memoryd init --fresh` for a non-interactive fresh install, or `./agent-memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
+In an interactive terminal, `init` asks whether to start fresh or import existing memories. Use `./memoryd init --fresh` for a non-interactive fresh install, or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
 
-`init` also installs managed global Git hooks via `git config --global core.hooksPath` when no global hook path is already configured. On macOS, it installs and starts the managed launchd daemon. Use `./agent-memoryd init --no-daemon` if you only want to skip the daemon service.
+`init` also installs managed global Git hooks via `git config --global core.hooksPath` when no global hook path is already configured. On macOS, it installs and starts the managed launchd daemon. Use `./memoryd init --no-daemon` if you only want to skip the daemon service.
 
 Run the MCP server over stdio:
 
 ```sh
-./agent-memoryd mcp
+./memoryd mcp
 ```
 
 Run the resident ingest worker manually:
 
 ```sh
-./agent-memoryd daemon
+./memoryd daemon
 ```
 
 Explore memories interactively:
 
 ```sh
-./agent-memoryd explore
+./memoryd explore
 ```
 
 Daemon transcript and git producers require a configured `summarizer_command`. The default uses `codex exec` in read-only ephemeral mode.
@@ -42,9 +42,9 @@ Daemon transcript and git producers require a configured `summarizer_command`. T
 Add and retrieve a memory from the CLI:
 
 ```sh
-./agent-memoryd add --project example --summary "Uses local memory" \
+./memoryd add --project example --summary "Uses local memory" \
   "agent-memoryd stores durable local memories for coding agents."
-./agent-memoryd search --project example "local memory"
+./memoryd search --project example "local memory"
 ```
 
 ## Goals
@@ -83,7 +83,7 @@ Add and retrieve a memory from the CLI:
 
 `reindex` rebuilds the configured retrieval index from `memories.jsonl`.
 
-`uninstall --yes` removes managed `agent-memoryd` resources.
+`uninstall --yes` removes managed local memory resources.
 
 ## Docs
 
@@ -114,15 +114,15 @@ mise run build
 Compare the checked-out binary with the installed one:
 
 ```sh
-./agent-memoryd --version
-agent-memoryd --version
+./memoryd --version
+memoryd --version
 ```
 
 Update the installed binary with an atomic replace:
 
 ```sh
 mise run install-local
-agent-memoryd init
+memoryd init
 ```
 
 The default build keeps source records in a local JSONL file and uses a small lexical search fallback so contributors can build and test without native zvec libraries.
@@ -147,7 +147,7 @@ Tagged releases publish lexical macOS and Linux binaries through GitHub Releases
 
 The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. The MCP `reflect` tool uses the same summarizer path for the current session. These producers store distilled memories with transcript, session, or commit references, not raw logs.
 
-`agent-memoryd init` writes a resource manifest to the data root, installs managed global Git hooks when safe, and starts the managed LaunchAgent on macOS. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
+`memoryd init` writes a resource manifest to the data root, installs managed global Git hooks when safe, and starts the managed LaunchAgent on macOS. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
 
 See [docs/architecture.md](./docs/architecture.md) for more detail.
 

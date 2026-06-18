@@ -1,4 +1,4 @@
 #!/bin/sh
-agent-memoryd enqueue-git \
+memoryd enqueue-git \
   --repo "$(git rev-parse --show-toplevel)" \
   --sha "$(git rev-parse HEAD)" >/dev/null 2>&1 || true

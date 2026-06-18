@@ -1,6 +1,6 @@
 # Config
 
-`agent-memoryd` reads JSON config from:
+`memoryd` reads agent-memoryd JSON config from:
 
 ```text
 $AGENT_MEMORYD_HOME/config.json
@@ -12,7 +12,7 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 ~/.local/share/agent-memoryd
 ```
 
-`agent-memoryd init` writes a default config and a `resources.json` manifest in the same root.
+`memoryd init` writes a default config and a `resources.json` manifest in the same root.
 
 ## Example
 

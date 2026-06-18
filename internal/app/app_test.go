@@ -46,7 +46,7 @@ func TestRunVersion(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Run(%q) returned error: %v", arg, err)
 			}
-			if !strings.Contains(out, "agent-memoryd") {
+			if !strings.Contains(out, "memoryd") {
 				t.Fatalf("version output missing binary name:\n%s", out)
 			}
 		})
@@ -58,7 +58,7 @@ func TestRunUnknownCommandMentionsHelp(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run returned nil error for unknown command")
 	}
-	if !strings.Contains(err.Error(), "agent-memoryd --help") {
+	if !strings.Contains(err.Error(), "memoryd --help") {
 		t.Fatalf("unknown command error did not mention help: %v", err)
 	}
 }
@@ -68,7 +68,7 @@ func TestRunArgumentErrorMentionsHelp(t *testing.T) {
 	if err == nil {
 		t.Fatal("Run returned nil error for missing add body")
 	}
-	if !strings.Contains(err.Error(), "agent-memoryd --help") {
+	if !strings.Contains(err.Error(), "memoryd --help") {
 		t.Fatalf("argument error did not mention help: %v", err)
 	}
 }
@@ -83,7 +83,7 @@ func TestRunSubcommandHelp(t *testing.T) {
 	for _, want := range []string{
 		"Create or update a memory.",
 		"Usage:",
-		"agent-memoryd add [flags] <body>",
+		"memoryd add [flags] <body>",
 		"--summary",
 	} {
 		if !strings.Contains(out, want) {
