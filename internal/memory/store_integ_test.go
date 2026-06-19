@@ -140,6 +140,62 @@ func TestStoreForget(t *testing.T) {
 	}
 }
 
+func TestStoreForgetRemovesRecordFromSearch(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("CGO_ENABLED") == "0" {
+		t.Skip("skipping: cgo disabled")
+	}
+	dir := t.TempDir()
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     filepath.Join(dir, "zvec"),
+		EmbeddingDim: 768,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0.5,
+		VectorWeight: 0.5,
+		Embedder:     keywordEmbedder{dim: 768},
+	})
+	if err != nil {
+		t.Skipf("skipping: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+
+	deleted, err := store.Add(ctx, memory.AddRequest{
+		ID:      "forget:arborist",
+		Summary: "Tree doctor stale search target",
+		Body:    "An arborist assessed a street tree with drought stress.",
+	})
+	if err != nil {
+		t.Fatalf("add deleted target: %v", err)
+	}
+	if _, err := store.Add(ctx, memory.AddRequest{
+		ID:      "keep:fermentation",
+		Summary: "Fermentation vessel sanitation",
+		Body:    "Clean the wine tank before pitching yeast.",
+	}); err != nil {
+		t.Fatalf("add survivor: %v", err)
+	}
+	if err := store.Forget(ctx, deleted.ID); err != nil {
+		t.Fatalf("forget: %v", err)
+	}
+	if _, err := store.Get(ctx, deleted.ID); err != memory.ErrNotFound {
+		t.Fatalf("get forgotten memory error = %v, want ErrNotFound", err)
+	}
+
+	results, err := store.Search(ctx, memory.SearchRequest{
+		Query: "tree doctor",
+		Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	for _, result := range results {
+		if result.ID == deleted.ID {
+			t.Fatalf("forgotten memory returned from search: %+v", results)
+		}
+	}
+}
+
 func TestStoreStatus(t *testing.T) {
 	t.Parallel()
 	store := testStore(t)

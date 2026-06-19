@@ -284,7 +284,10 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 		return nil, fmt.Errorf("fts query: %w", err)
 	}
 	defer zvec.FreeDocs(ftsDocs)
-	ftsResults := docsToResults(ftsDocs)
+	ftsResults, err := s.docsToLiveResultsLocked(ftsDocs)
+	if err != nil {
+		return nil, err
+	}
 
 	// Vector leg - skip if embedder disabled or fails
 	var vecResults []SearchResult
@@ -301,7 +304,9 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 					vecDocs, err := s.coll.Query(vecQuery)
 					if err == nil {
 						defer zvec.FreeDocs(vecDocs)
-						vecResults = docsToResults(vecDocs)
+						if liveResults, liveErr := s.docsToLiveResultsLocked(vecDocs); liveErr == nil {
+							vecResults = liveResults
+						}
 					}
 				}
 			}
@@ -424,8 +429,13 @@ func (s *Store) List(ctx context.Context) ([]Record, error) {
 		return nil, fmt.Errorf("list query: %w", err)
 	}
 	defer zvec.FreeDocs(docs)
+	liveDocs, err := s.fetchLiveDocsLocked(docs)
+	if err != nil {
+		return nil, err
+	}
+	defer zvec.FreeDocs(liveDocs)
 	records := make([]Record, 0, len(docs))
-	for _, doc := range docs {
+	for _, doc := range liveDocs {
 		r, err := docToRecord(doc)
 		if err != nil {
 			continue
@@ -832,13 +842,27 @@ func sanitizePK(id string) string {
 	return s[:32] + "#" + h
 }
 
-func docsToResults(docs []*zvec.Doc) []SearchResult {
+func (s *Store) docsToLiveResultsLocked(docs []*zvec.Doc) ([]SearchResult, error) {
+	liveDocs, err := s.fetchLiveDocsLocked(docs)
+	if err != nil {
+		return nil, err
+	}
+	defer zvec.FreeDocs(liveDocs)
+
+	liveByPK := make(map[string]*zvec.Doc, len(liveDocs))
+	for _, doc := range liveDocs {
+		liveByPK[doc.GetPK()] = doc
+	}
 	results := make([]SearchResult, 0, len(docs))
 	for _, doc := range docs {
-		kind, _ := doc.GetStringField("kind")
-		project, _ := doc.GetStringField("project")
-		source, _ := doc.GetStringField("source")
-		summary, _ := doc.GetStringField("summary")
+		liveDoc, ok := liveByPK[doc.GetPK()]
+		if !ok {
+			continue
+		}
+		kind, _ := liveDoc.GetStringField("kind")
+		project, _ := liveDoc.GetStringField("project")
+		source, _ := liveDoc.GetStringField("source")
+		summary, _ := liveDoc.GetStringField("summary")
 		results = append(results, SearchResult{
 			ID:      doc.GetPK(),
 			Kind:    kind,
@@ -848,5 +872,32 @@ func docsToResults(docs []*zvec.Doc) []SearchResult {
 			Score:   float64(doc.GetScore()),
 		})
 	}
-	return results
+	return results, nil
+}
+
+// fetchLiveDocsLocked re-fetches query hits by PK so stale zvec index entries
+// left behind after Delete cannot surface through Search/List after Get returns
+// ErrNotFound. Caller must hold s.mu.
+func (s *Store) fetchLiveDocsLocked(docs []*zvec.Doc) ([]*zvec.Doc, error) {
+	pks := make([]string, 0, len(docs))
+	seen := make(map[string]struct{}, len(docs))
+	for _, doc := range docs {
+		pk := doc.GetPK()
+		if pk == "" {
+			continue
+		}
+		if _, ok := seen[pk]; ok {
+			continue
+		}
+		seen[pk] = struct{}{}
+		pks = append(pks, pk)
+	}
+	if len(pks) == 0 {
+		return nil, nil
+	}
+	liveDocs, err := s.coll.Fetch(pks, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch live docs: %w", err)
+	}
+	return liveDocs, nil
 }
