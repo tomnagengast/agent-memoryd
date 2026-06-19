@@ -41,6 +41,14 @@ func normalize(scores []float64) []float64 {
 	return out
 }
 
+func normalizeDistance(scores []float64) []float64 {
+	out := normalize(scores)
+	for i := range out {
+		out[i] = 1 - out[i]
+	}
+	return out
+}
+
 func blend(fts, vec []SearchResult, w BlendWeights) []SearchResult {
 	byID := make(map[string]*scoredResult)
 	ftsScores := make([]float64, len(fts))
@@ -58,7 +66,7 @@ func blend(fts, vec []SearchResult, w BlendWeights) []SearchResult {
 	for i, r := range vec {
 		vecScores[i] = r.Score
 	}
-	normVec := normalize(vecScores)
+	normVec := normalizeDistance(vecScores)
 	for i, r := range vec {
 		if existing, ok := byID[r.ID]; ok {
 			existing.Score += normVec[i] * w.Vector

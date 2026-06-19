@@ -40,6 +40,19 @@ func TestBlendBothLegs(t *testing.T) {
 	}
 }
 
+func TestBlendTreatsLowerVectorDistanceAsBetter(t *testing.T) {
+	t.Parallel()
+	vec := []SearchResult{{ID: "near", Score: 0.1}, {ID: "far", Score: 0.9}}
+	w := BlendWeights{FTS: 0.5, Vector: 0.5}
+	results := blend(nil, vec, w)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].ID != "near" {
+		t.Fatalf("expected lower vector distance first, got %s", results[0].ID)
+	}
+}
+
 func TestBlendFTSOnly(t *testing.T) {
 	t.Parallel()
 	fts := []SearchResult{{ID: "a", Score: 1.0}}
