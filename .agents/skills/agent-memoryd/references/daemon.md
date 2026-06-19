@@ -11,18 +11,22 @@ Table of contents
 
 ## Config schema and location
 
-Config is JSON at `$AGENT_MEMORYD_HOME/config.json`; when `AGENT_MEMORYD_HOME` is unset the root defaults to `~/.local/share/agent-memoryd`. `init` writes defaults. Missing keys fall back to built-in defaults; `~/` and `$ENV` are expanded on load.
+Config is JSON at `$MEMORYD_HOME/config.json`; when `MEMORYD_HOME` is unset the root defaults to `~/.local/share/memoryd`. Interactive `init` writes choices from the onboarding flow; scripted `init` writes defaults plus any explicit flags. Missing keys fall back to built-in defaults; `~/` and `$ENV` are expanded on load.
 
 | key | default | meaning |
 |---|---|---|
-| `root` | `~/.local/share/agent-memoryd` | managed data dir; **`uninstall --yes` deletes it** |
-| `store_path` | `<root>/memories.jsonl` | JSONL source of truth |
-| `index_backend` | `lexical` | `lexical` or `zvec` (needs zvec build) |
-| `zvec_path` | `<root>/zvec` | zvec index dir (zvec backend only) |
+| `root` | `~/.local/share/memoryd` | managed data dir; **`uninstall --yes` deletes it** |
+| `store_path` | `<root>/memories.jsonl` | legacy migration path only |
+| `zvec_path` | `<root>/zvec` | durable zvec store |
 | `spool_dir` | `<root>/spool` | queued git events |
-| `transcript_roots` | `~/.claude/projects`, `~/.codex/sessions` | dirs scanned for idle `.jsonl` transcripts |
+| `transcript_roots` | `~/.claude/projects`, `~/.codex/sessions`, `~/.local/share/opencode` | dirs scanned for idle `.jsonl` transcripts |
 | `summarizer_command` | `codex exec --sandbox read-only --skip-git-repo-check --ephemeral -` | distills source material into memories |
 | `summarizer_timeout` | `5m0s` | bound per summarizer run |
+| `embedder_provider` | `disabled` | `disabled`, `command`, or `ollama` |
+| `embedder_model` | `nomic-embed-text` | model used by provider-backed embedders |
+| `embedder_url` | `http://127.0.0.1:11434` | Ollama base URL |
+| `embedder_command` | empty | command escape hatch that returns JSON float vectors |
+| `embedding_dim` | `768` | expected embedder vector dimension |
 | `memory_context_limit` | `12` | existing summaries sent to summarizer for dedup |
 | `poll_interval` | `10s` | daemon ingest cadence |
 | `idle_after` | `2m0s` | transcript must be unchanged this long before indexing |
@@ -31,7 +35,7 @@ Config is JSON at `$AGENT_MEMORYD_HOME/config.json`; when `AGENT_MEMORYD_HOME` i
 
 ## The daemon
 
-`agent-memoryd daemon` is the resident worker; `scan-once` runs a single pass. It processes queued git events and scans `transcript_roots` every `poll_interval`. On macOS `init` runs it via launchd by default. Producers never store raw source material — they send it to the summarizer and store only the distilled result with a `source` pointer.
+`memoryd daemon` is the resident worker; `scan-once` runs a single pass. It processes queued git events and scans `transcript_roots` every `poll_interval`. On macOS `init` runs it via launchd by default. Producers never store raw source material — they send it to the summarizer and store only the distilled result with a `source` pointer.
 
 ## Transcript ingestion
 
@@ -47,12 +51,12 @@ The MCP `reflect` tool runs this same path on demand (session text, an explicit 
 Git hooks do **not** summarize inline; they enqueue an event and return fast:
 
 ```sh
-agent-memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
+memoryd enqueue-git --repo "$(git rev-parse --show-toplevel)" --sha "$(git rev-parse HEAD)"
 ```
 
 The daemon later runs `git show --stat`, sends that plus existing summaries to the summarizer, and stores distilled memories with `repo@sha` in `source`. The event file is deleted after success.
 
-Managed hooks (`post-commit`, `post-merge`, `post-rewrite`) live under `<root>/git-hooks`. `init` sets global `core.hooksPath` to that dir **only if** no global hook path is already configured; existing global hooks are left untouched. The managed hooks first run any same-named repo-local hook, then enqueue. They need `agent-memoryd` on `PATH`.
+Managed hooks (`post-commit`, `post-merge`, `post-rewrite`) live under `<root>/git-hooks`. `init` sets global `core.hooksPath` to that dir **only if** no global hook path is already configured; existing global hooks are left untouched. The managed hooks first run any same-named repo-local hook, then enqueue. They need `memoryd` on `PATH`.
 
 ## Summarizer command
 
@@ -66,7 +70,7 @@ On failure the daemon logs the command failure and output byte counts, but **red
 
 ## launchd and logs
 
-`init` writes `~/Library/LaunchAgents/dev.agent-memoryd.plist`, then `launchctl bootstrap` + `kickstart`. The plist captures `AGENT_MEMORYD_HOME` and the installing shell's `PATH` so `codex` (or your summarizer) resolves under launchd. Logs go to `<root>/logs/agent-memoryd.{out,err}.log`. Render without installing: `agent-memoryd launchd-plist --bin /abs/path/to/agent-memoryd`.
+`init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, then `launchctl bootstrap` + `kickstart`. The plist captures `MEMORYD_HOME` and the installing shell's `PATH` so `codex` (or your summarizer) resolves under launchd. Logs go to `<root>/logs/memoryd.{out,err}.log`. Render without installing: `memoryd launchd-plist --bin /abs/path/to/memoryd`.
 
 ## Privacy
 

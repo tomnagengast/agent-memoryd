@@ -7,24 +7,26 @@ run = "gofmt -w ."
 
 [tasks.test]
 description = "Run Go tests"
-run = "go test ./..."
-
-[tasks.build]
-description = "Build the agent-memoryd binary"
 run = '''
-version="${AGENT_MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
-commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
-date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-go build \
-  -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
-  -o ./agent-memoryd \
-  ./cmd/agent-memoryd
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) zvec_platform=darwin_arm64 ;;
+  Linux-x86_64) zvec_platform=linux_amd64 ;;
+  Linux-aarch64) zvec_platform=linux_arm64 ;;
+  *) zvec_platform="" ;;
+esac
+if [ -n "$zvec_platform" ] && [ -d "./lib/${zvec_platform}" ]; then
+  CGO_CFLAGS="-I$(pwd)/lib/include" \
+  CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,$(pwd)/lib/${zvec_platform}" \
+  CGO_ENABLED=1 go test ./...
+else
+  go test ./internal/embedder/ ./internal/flock/ ./internal/memory/...
+fi
 '''
 
-[tasks.build-zvec]
-description = "Build with the zvec-go index adapter"
+[tasks.build]
+description = "Build the memoryd binary (always cgo + zvec)"
 run = '''
-version="${AGENT_MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+version="${MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
 date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 case "$(uname -s)-$(uname -m)" in
@@ -36,24 +38,49 @@ esac
 CGO_CFLAGS="-I$(pwd)/lib/include" \
 CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,$(pwd)/lib/${zvec_platform}" \
 CGO_ENABLED=1 go build \
-  -tags zvec \
   -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
-  -o ./agent-memoryd \
+  -o ./memoryd \
   ./cmd/agent-memoryd
 '''
 
 [tasks.install-local]
-description = "Atomically install ./agent-memoryd to ~/.local/bin"
+description = "Install memoryd binary and native lib to ~/.local (rpath-independent of working tree)"
 run = '''
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64)  zvec_platform=darwin_arm64; libext=dylib ;;
+  Linux-x86_64)  zvec_platform=linux_amd64;  libext=so ;;
+  Linux-aarch64) zvec_platform=linux_arm64;  libext=so ;;
+  *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+
+# Copy native lib to stable runtime location
+mkdir -p "${HOME}/.local/lib/memoryd"
+cp "./lib/${zvec_platform}/libzvec_c_api.${libext}" "${HOME}/.local/lib/memoryd/"
+
+# Build binary with rpath pointing at installed lib location (not working tree)
+version="${MEMORYD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
+date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CGO_CFLAGS="-I$(pwd)/lib/include" \
+CGO_LDFLAGS="-L$(pwd)/lib/${zvec_platform} -lzvec_c_api -Wl,-rpath,${HOME}/.local/lib/memoryd" \
+CGO_ENABLED=1 go build \
+  -ldflags "-X github.com/tomnagengast/agent-memoryd/internal/version.Version=${version} -X github.com/tomnagengast/agent-memoryd/internal/version.Commit=${commit} -X github.com/tomnagengast/agent-memoryd/internal/version.Date=${date}" \
+  -o ./memoryd \
+  ./cmd/agent-memoryd
+
+# Atomic install of binary
 mkdir -p "${HOME}/.local/bin"
-tmp="${HOME}/.local/bin/agent-memoryd.new"
-cp ./agent-memoryd "${tmp}"
+tmp="${HOME}/.local/bin/memoryd.new"
+cp ./memoryd "${tmp}"
 chmod 755 "${tmp}"
-mv "${tmp}" "${HOME}/.local/bin/agent-memoryd"
+mv "${tmp}" "${HOME}/.local/bin/memoryd"
+
+echo "Installed: ${HOME}/.local/bin/memoryd"
+echo "Native lib: ${HOME}/.local/lib/memoryd/libzvec_c_api.${libext}"
 '''
 
 [tasks.zvec-libs]
-description = "Download zvec native libraries for build-zvec"
+description = "Download zvec native libraries for build"
 run = "go run github.com/zvec-ai/zvec-go/cmd/download-libs@v0.5.0 -version v0.5.0 -dest ./lib"
 
 [tasks.tidy]

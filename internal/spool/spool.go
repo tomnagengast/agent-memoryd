@@ -46,7 +46,7 @@ func EnqueueGit(dir string, event GitEvent) (string, error) {
 	return path, os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-func ProcessGit(ctx context.Context, dir string, store *memory.Store, agent summarizer.Agent, contextLimit int, state *ingeststate.State) (int, error) {
+func ProcessGit(ctx context.Context, dir string, store memory.API, agent summarizer.Agent, contextLimit int, state *ingeststate.State) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -107,7 +107,7 @@ func moveFailedEvent(dir, path string) error {
 	return nil
 }
 
-func addGitMemory(ctx context.Context, store *memory.Store, event GitEvent, agent summarizer.Agent, contextLimit int) error {
+func addGitMemory(ctx context.Context, store memory.API, event GitEvent, agent summarizer.Agent, contextLimit int) error {
 	if agent == nil {
 		return fmt.Errorf("git summarizer is not configured")
 	}

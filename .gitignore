@@ -23,4 +23,8 @@ lib/
 # Generated local data
 .agent-memoryd/
 /agent-memoryd
+/memoryd
 coverage.out
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/

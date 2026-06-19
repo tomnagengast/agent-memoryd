@@ -29,9 +29,11 @@ type Status struct {
 	Skipped   string `json:"skipped,omitempty"`
 }
 
+const DefaultLabel = "dev.memoryd"
+
 func Render(cfg Config) (string, error) {
 	if cfg.Label == "" {
-		cfg.Label = "dev.agent-memoryd"
+		cfg.Label = DefaultLabel
 	}
 	if cfg.Path == "" {
 		cfg.Path = DefaultPath()
@@ -46,7 +48,7 @@ func Render(cfg Config) (string, error) {
 
 func InstallAndStart(cfg Config) (Status, error) {
 	if cfg.Label == "" {
-		cfg.Label = "dev.agent-memoryd"
+		cfg.Label = DefaultLabel
 	}
 	if cfg.Path == "" {
 		cfg.Path = DefaultPath()
@@ -83,7 +85,7 @@ func InstallAndStart(cfg Config) (Status, error) {
 
 func CurrentStatus(cfg Config) Status {
 	if cfg.Label == "" {
-		cfg.Label = "dev.agent-memoryd"
+		cfg.Label = DefaultLabel
 	}
 	status := Status{
 		Supported: runtime.GOOS == "darwin",
@@ -135,7 +137,7 @@ func runLaunchctl(args ...string) error {
 }
 
 func daemonProcessRunning() bool {
-	return exec.Command("pgrep", "-f", "agent-memoryd daemon").Run() == nil
+	return exec.Command("pgrep", "-f", "memoryd daemon").Run() == nil
 }
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -155,15 +157,15 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <true/>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>AGENT_MEMORYD_HOME</key>
+    <key>MEMORYD_HOME</key>
     <string>{{ .Root }}</string>
     <key>PATH</key>
     <string>{{ .Path }}</string>
   </dict>
   <key>StandardOutPath</key>
-  <string>{{ .LogDir }}/agent-memoryd.out.log</string>
+  <string>{{ .LogDir }}/memoryd.out.log</string>
   <key>StandardErrorPath</key>
-  <string>{{ .LogDir }}/agent-memoryd.err.log</string>
+  <string>{{ .LogDir }}/memoryd.err.log</string>
 </dict>
 </plist>
 `

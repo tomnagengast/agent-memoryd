@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const CommandName = "memoryd"
+
 var (
 	Version = "dev"
 	Commit  = ""
@@ -23,15 +25,15 @@ func String() string {
 	}
 	date := strings.TrimSpace(Date)
 	if commit == "" && date == "" {
-		return fmt.Sprintf("agent-memoryd %s", version)
+		return fmt.Sprintf("%s %s", CommandName, version)
 	}
 	if date == "" {
-		return fmt.Sprintf("agent-memoryd %s (%s)", version, commit)
+		return fmt.Sprintf("%s %s (%s)", CommandName, version, commit)
 	}
 	if commit == "" {
-		return fmt.Sprintf("agent-memoryd %s (%s)", version, date)
+		return fmt.Sprintf("%s %s (%s)", CommandName, version, date)
 	}
-	return fmt.Sprintf("agent-memoryd %s (%s, %s)", version, commit, date)
+	return fmt.Sprintf("%s %s (%s, %s)", CommandName, version, commit, date)
 }
 
 func vcsRevision() string {

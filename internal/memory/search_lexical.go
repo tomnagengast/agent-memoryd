@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// SearchLexical performs an in-memory keyword search over a slice of records.
+// It is used by the explore package's test fake and as a fallback when no
+// zvec store is available.
 func SearchLexical(records []Record, req SearchRequest) ([]SearchResult, error) {
 	query := strings.TrimSpace(req.Query)
 	if query == "" {

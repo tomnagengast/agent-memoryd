@@ -2,7 +2,6 @@ package summarizer
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +26,7 @@ func TestParseResultFiltersEmptyMemoriesAndAddsSummaries(t *testing.T) {
 func TestExistingMemoryRefsReturnsRecentProjectScopedSummaries(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	_, err := store.Add(ctx, memory.AddRequest{
 		ID:      "old",
 		Project: "agent-memoryd",

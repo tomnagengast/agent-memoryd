@@ -1,28 +1,26 @@
 # Config
 
-`agent-memoryd` reads JSON config from:
+`memoryd` reads agent-memoryd JSON config from:
 
 ```text
-$AGENT_MEMORYD_HOME/config.json
+$MEMORYD_HOME/config.json
 ```
 
-When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
+When `MEMORYD_HOME` is unset, the root defaults to:
 
 ```text
-~/.local/share/agent-memoryd
+~/.local/share/memoryd
 ```
 
-`agent-memoryd init` writes a default config and a `resources.json` manifest in the same root.
+`memoryd init` writes a config and a `resources.json` manifest in the same root. In an interactive terminal, it uses a guided onboarding flow for fresh-vs-import setup, default transcript ingestion roots, Ollama semantic search, and whether to start the background daemon immediately.
 
 ## Example
 
 ```json
 {
-  "root": "/Users/you/.local/share/agent-memoryd",
-  "store_path": "/Users/you/.local/share/agent-memoryd/memories.jsonl",
-  "index_backend": "lexical",
-  "zvec_path": "/Users/you/.local/share/agent-memoryd/zvec",
-  "spool_dir": "/Users/you/.local/share/agent-memoryd/spool",
+  "root": "/Users/you/.local/share/memoryd",
+  "zvec_path": "/Users/you/.local/share/memoryd/zvec",
+  "spool_dir": "/Users/you/.local/share/memoryd/spool",
   "transcript_roots": [
     "/Users/you/.claude/projects",
     "/Users/you/.codex/sessions"
@@ -37,6 +35,15 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
     "-"
   ],
   "summarizer_timeout": "5m0s",
+  "embedder_provider": "disabled",
+  "embedder_model": "nomic-embed-text",
+  "embedder_url": "http://127.0.0.1:11434",
+  "embedder_command": [],
+  "embedder_timeout": "30s",
+  "embedding_dim": 768,
+  "search_fts_weight": 0.5,
+  "search_vector_weight": 0.5,
+  "lock_timeout": "5s",
   "memory_context_limit": 12,
   "poll_interval": "10s",
   "idle_after": "2m0s"
@@ -47,21 +54,37 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 `root` is the managed data directory. `uninstall --yes` removes this directory, so keep it dedicated to `agent-memoryd`.
 
-`store_path` is the JSONL source store. It is the rebuildable source of truth for memories.
+`store_path` is a legacy field retained only for first-run migration. On first open, if `memories.jsonl` exists in the data root, it is imported once into the zvec store and renamed `memories.jsonl.migrated`. This field has no effect after migration.
 
 `ingest-state.json` is managed operational state under `root`. It records transcript and git event fingerprints that were processed, failed, or quarantined so the daemon does not retry the same unchanged source every poll.
 
-`index_backend` selects the retrieval index. Use `lexical` for the default pure Go build or `zvec` for a binary built with `mise run build-zvec`.
-
-`zvec_path` is the on-disk zvec index directory.
+`zvec_path` is the on-disk zvec store directory. This is the durable store for all memories.
 
 `spool_dir` holds queued git events. The managed global Git hooks write small JSON files here, and the daemon passes each event's `git show` output to the summarizer.
 
-`transcript_roots` lists directories to scan for idle `.jsonl` agent transcripts. The defaults cover Claude project transcripts and Codex sessions. The daemon only ingests transcript files modified after `init` wrote the resource manifest. Remove or narrow these paths if you do not want transcript ingestion.
+`transcript_roots` lists directories to scan for idle `.jsonl` agent transcripts. The defaults cover Claude project transcripts, Codex sessions, and opencode data. The daemon only ingests transcript files modified after `init` wrote the resource manifest. Choose the disabled transcript-ingestion option during interactive `init`, or remove/narrow these paths later, if you do not want transcript ingestion.
 
 `summarizer_command` is the external command used by daemon producers to distill transcripts and git summaries into durable memories. The command receives a prompt on stdin and must return JSON shaped like `{"memories":[{"kind":"preference","summary":"short summary","body":"concise durable memory"}]}`. The default command uses `codex exec` in read-only ephemeral mode. Set this to another command if you want a different local summarization agent.
 
 `summarizer_timeout` bounds one summarizer run.
+
+`embedder_provider` selects the semantic-search embedding provider. Supported values are `disabled`, `command`, and `ollama`. Existing configs with `embedder_command` continue to use the command provider even if this field is omitted.
+
+`embedder_model` is the model name for provider-backed embedders. For Ollama, the default is `nomic-embed-text`.
+
+`embedder_url` is the base URL for the Ollama provider. Default is `http://127.0.0.1:11434`; `memoryd` calls `/api/embed` under that URL.
+
+`embedder_command` is the external command escape hatch used to embed memory text as a vector for semantic search. The command receives the text on stdin and must return a JSON array of float32 values. Example: `["my-embedder", "--dim", "768"]`.
+
+`embedder_timeout` bounds one embedding call. Default is `30s`.
+
+`embedding_dim` is the expected dimension of vectors returned by the configured embedder. Default is `768`, matching Ollama `nomic-embed-text`. This must match the model used by your embedder. Changing this after the store is created requires a fresh store.
+
+`search_fts_weight` is the blend weight applied to full-text search results when both FTS and vector legs return results. Default is `0.5`. Increase this to favor keyword matching.
+
+`search_vector_weight` is the blend weight applied to vector search results. Default is `0.5`. Increase this to favor semantic similarity. Has no effect when no embedder is configured.
+
+`lock_timeout` is how long `init` waits for the daemon socket to become available after starting the managed service. Default is `5s`.
 
 `memory_context_limit` controls how many existing memory summaries are passed to the summarizer so it can avoid duplicating old memories and identify genuinely new facts, preferences, instructions, or decisions.
 
@@ -71,7 +94,7 @@ When `AGENT_MEMORYD_HOME` is unset, the root defaults to:
 
 ## Import
 
-`init` can start fresh or import existing memories before the daemon starts. In an interactive terminal it prompts for that choice. In scripts, use `--fresh` or `--import <path>`.
+`init` can start fresh or import existing memories after the daemon starts. In an interactive terminal, the onboarding flow prompts for that choice along with transcript ingestion, Ollama semantic search, and daemon startup. In scripts, use `--fresh` or `--import <path>`. `--import` requires the daemon and cannot be combined with `--no-daemon`.
 
 `--import` accepts an agent-memoryd JSONL file, a markdown file, a text file, or a directory containing markdown/text files. Use `--import-project <name>` to assign a project to imported markdown and text records. JSONL imports preserve each record's existing project.
 

@@ -15,7 +15,7 @@ import (
 
 type Daemon struct {
 	Config config.Config
-	Store  *memory.Store
+	Store  memory.API
 	Log    *slog.Logger
 }
 
@@ -77,6 +77,14 @@ func (d Daemon) Once(ctx context.Context) (err error) {
 	}
 	if d.Log != nil && (gitEvents > 0 || sessions > 0) {
 		d.Log.Info("processed memory inputs", "git_events", gitEvents, "sessions", sessions)
+	}
+
+	// Optimize after each pass so that ingested records are FTS-durable across
+	// process restarts. This is cheap (~0.4 ms) when nothing changed.
+	if optErr := d.Store.Optimize(ctx); optErr != nil {
+		if d.Log != nil {
+			d.Log.Warn("daemon: optimize after pass failed", "error", optErr)
+		}
 	}
 	return nil
 }

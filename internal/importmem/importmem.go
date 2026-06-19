@@ -28,7 +28,7 @@ type Result struct {
 	Skipped  int    `json:"skipped"`
 }
 
-func Import(ctx context.Context, store *memory.Store, opts Options) (Result, error) {
+func Import(ctx context.Context, store memory.API, opts Options) (Result, error) {
 	path := strings.TrimSpace(opts.Path)
 	if path == "" {
 		return Result{}, fmt.Errorf("import path is empty")
@@ -74,7 +74,7 @@ func Import(ctx context.Context, store *memory.Store, opts Options) (Result, err
 	return importFile(ctx, store, path, opts.Project)
 }
 
-func importFile(ctx context.Context, store *memory.Store, path, project string) (Result, error) {
+func importFile(ctx context.Context, store memory.API, path, project string) (Result, error) {
 	result := Result{Path: path, Format: fileFormat(path)}
 	switch result.Format {
 	case "jsonl":
@@ -99,7 +99,7 @@ func importFile(ctx context.Context, store *memory.Store, path, project string) 
 	}
 }
 
-func importJSONL(ctx context.Context, store *memory.Store, path, project string) (int, int, error) {
+func importJSONL(ctx context.Context, store memory.API, path, project string) (int, int, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0, fmt.Errorf("open jsonl import: %w", err)
@@ -158,7 +158,7 @@ func importJSONL(ctx context.Context, store *memory.Store, path, project string)
 	return imported, skipped, nil
 }
 
-func importText(ctx context.Context, store *memory.Store, path, project string) (int, int, error) {
+func importText(ctx context.Context, store memory.API, path, project string) (int, int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, 0, fmt.Errorf("read text import: %w", err)

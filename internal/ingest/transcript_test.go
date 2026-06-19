@@ -54,7 +54,7 @@ func TestScannerStoresSummarizedTranscriptMemoryWithSourceReference(t *testing.T
 		t.Fatalf("chtime transcript: %v", err)
 	}
 
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	if _, err := store.Add(ctx, memory.AddRequest{
 		ID:      "existing",
 		Project: "agent-memoryd",
@@ -127,7 +127,7 @@ func TestScannerStoresOpenCodeExportedSession(t *testing.T) {
 		t.Fatalf("chtime transcript: %v", err)
 	}
 
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	fake := &fakeTranscriptSummarizer{}
 	scanner := Scanner{
 		Roots:      []string{root},
@@ -187,7 +187,7 @@ exit 1
 	t.Setenv("OPENCODE_EXPORT_FIXTURE", fixture)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	state := &ingeststate.State{Inputs: map[string]ingeststate.Input{}}
 	fake := &fakeTranscriptSummarizer{}
 	scanner := Scanner{
@@ -230,7 +230,7 @@ func TestScannerSkipsTranscriptsOlderThanCutoff(t *testing.T) {
 		t.Fatalf("chtime transcript: %v", err)
 	}
 
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	fake := &fakeTranscriptSummarizer{}
 	scanner := Scanner{
 		Roots:      []string{root},
@@ -263,7 +263,7 @@ func TestScannerStateSkipsProcessedTranscriptFingerprint(t *testing.T) {
 	if err := os.Chtimes(transcript, modTime, modTime); err != nil {
 		t.Fatalf("chtime transcript: %v", err)
 	}
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	state := &ingeststate.State{Inputs: map[string]ingeststate.Input{}}
 	fake := &fakeTranscriptSummarizer{}
 	scanner := Scanner{
@@ -302,7 +302,7 @@ func TestScannerStateQuarantinesRepeatedTranscriptFailure(t *testing.T) {
 	if err := os.Chtimes(transcript, modTime, modTime); err != nil {
 		t.Fatalf("chtime transcript: %v", err)
 	}
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	state := &ingeststate.State{Inputs: map[string]ingeststate.Input{}}
 	fake := &failingTranscriptSummarizer{}
 	scanner := Scanner{

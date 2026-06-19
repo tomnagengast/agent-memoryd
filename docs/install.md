@@ -1,33 +1,38 @@
 # Install
 
-`agent-memoryd` is distributed as a single Go binary. The repository uses `mise` to pin the Go toolchain and expose the common development tasks.
+`agent-memoryd` is distributed as a single Go binary named `memoryd` that links against a native zvec library. The repository uses `mise` to pin the Go toolchain and expose the common development tasks.
 
 ## System Requirements
 
-| Requirement        | Notes                                                                                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Go                 | Managed by `mise`; see `.mise.toml` for the pinned version.                                                                               |
-| macOS or Linux     | The default lexical build is pure Go. The zvec build currently has prebuilt native library support for macOS arm64 and Linux amd64/arm64. |
-| Git                | Optional, but required for git hook ingestion and commit source material.                                                                 |
-| Summarizer command | Required for daemon-generated transcript and git memories. The default config uses `codex exec`.                                          |
-| C toolchain        | Required only for the `zvec` build tag because `zvec-go` uses cgo.                                                                        |
+| Requirement        | Notes                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Go                 | Managed by `mise`; see `.mise.toml` for the pinned version.                                                                        |
+| macOS or Linux     | Prebuilt native zvec libraries are available for macOS arm64 and Linux amd64/arm64.                                                |
+| C toolchain        | Required because the build uses cgo to link the zvec native library.                                                               |
+| Git                | Optional, but required for git hook ingestion and commit source material.                                                          |
+| Summarizer command | Required for daemon-generated transcript and git memories. The default config uses `codex exec`.                                   |
 
 ## Build From Source
 
-Install project tools and build the default binary:
+Download the native zvec libraries (required before building):
 
 ```sh
-mise install
+mise run zvec-libs
+```
+
+This fetches prebuilt libraries into `./lib/`. Build the binary:
+
+```sh
 mise run build
 ```
 
-The binary is written to `./agent-memoryd`.
+The binary is written to `./memoryd`.
 
 Verify the build:
 
 ```sh
-./agent-memoryd --help
-./agent-memoryd --version
+./memoryd --help
+./memoryd --version
 ```
 
 `--help` does not require an initialized data root or config file. After initialization, `status` reports the planned and existing resource paths for the configured data root.
@@ -35,22 +40,32 @@ Verify the build:
 `--version` and `-v` print the version, commit, and build time stamped by the `mise run build` task. Compare the repository binary with the installed binary to see whether your global copy needs refreshing:
 
 ```sh
-./agent-memoryd --version
-agent-memoryd --version
+./memoryd --version
+memoryd --version
 ```
 
-Update the installed binary with an atomic replace so macOS does not kill executions of a launchd-managed binary that was overwritten in place:
+## Install Locally
+
+`mise run install-local` builds a tree-independent binary (rpath pointing at `~/.local/lib/memoryd`) and installs both the binary and the native library:
 
 ```sh
+mise run zvec-libs   # if not already done
 mise run install-local
-agent-memoryd init
 ```
 
-Release builds can set `AGENT_MEMORYD_VERSION`, usually to a semver tag such as `v0.1.0`. Without that override, the build task uses `git describe --tags --always --dirty`.
+This copies `libzvec_c_api.dylib` (or `.so` on Linux) to `~/.local/lib/memoryd/` and installs the binary to `~/.local/bin/memoryd` with an atomic replace. After install, the binary loads the native library from `~/.local/lib/memoryd/` regardless of whether the repository working tree is present.
+
+Release builds can set `MEMORYD_VERSION`, usually to a semver tag such as `v0.1.0`. Without that override, the build task uses `git describe --tags --always --dirty`.
+
+Then initialize:
+
+```sh
+memoryd init
+```
 
 ## Install From A GitHub Release
 
-Release assets are published for the default lexical build on macOS and Linux, for amd64 and arm64. Choose a tag and install the matching asset:
+Release assets include the binary and the native library. Choose a tag and install the matching asset:
 
 ```sh
 version="v0.1.0"
@@ -64,70 +79,62 @@ esac
 curl -L \
   -o /tmp/agent-memoryd.tar.gz \
   "https://github.com/tomnagengast/agent-memoryd/releases/download/${version}/agent-memoryd_${version}_${os}_${arch}.tar.gz"
-tar -xzf /tmp/agent-memoryd.tar.gz -C /tmp agent-memoryd
+tar -xzf /tmp/agent-memoryd.tar.gz -C /tmp memoryd
 mkdir -p ~/.local/bin
-install -m 755 /tmp/agent-memoryd ~/.local/bin/agent-memoryd
-agent-memoryd --version
-agent-memoryd init
+install -m 755 /tmp/memoryd ~/.local/bin/memoryd
+memoryd --version
+memoryd init
 ```
 
 Each release also includes `checksums.txt`.
 
 ## Initialize
 
-Create the local data root, default config, memory store, git spool, managed global Git hooks, logs directory, resource manifest, and managed daemon service:
+Create the local data root, default config, zvec store, git spool, managed global Git hooks, logs directory, resource manifest, and managed daemon service:
 
 ```sh
-./agent-memoryd init
+./memoryd init
 ```
 
-In an interactive terminal, `init` asks whether to start fresh or import existing memories. Non-interactive installs should pass one of these flags:
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, configure Ollama semantic search, and start the daemon service now. Non-interactive installs should pass one of these flags:
 
 ```sh
-./agent-memoryd init --fresh
-./agent-memoryd init --import ~/notes/agent
-./agent-memoryd init --import ~/.local/share/agent-memoryd/memories.jsonl
+./memoryd init --fresh
+./memoryd init --import ~/notes/agent
+./memoryd init --import ~/.local/share/memoryd/memories.jsonl
 ```
 
 The import path may be an agent-memoryd JSONL store, a markdown file, a text file, or a directory containing markdown/text files. JSONL records keep their existing ids, kinds, projects, sources, summaries, and bodies. Markdown and text imports become `note` records with stable `import:<hash>` ids and source paths, so running the same import again updates the same records instead of duplicating them.
 
-`init` writes executable hooks under `~/.local/share/agent-memoryd/git-hooks` and sets `git config --global core.hooksPath` to that directory when the global value is unset or already points at the managed directory. If another global hook path is already configured, `init` leaves it alone and reports that in `git_hooks`.
+`init` writes executable hooks under `~/.local/share/memoryd/git-hooks` and sets `git config --global core.hooksPath` to that directory when the global value is unset or already points at the managed directory. If another global hook path is already configured, `init` leaves it alone and reports that in `git_hooks`.
 
-On macOS, `init` writes `~/Library/LaunchAgents/dev.agent-memoryd.plist`, bootstraps it with launchd, and kickstarts `agent-memoryd daemon`. On other platforms, launchd setup is skipped.
+On macOS, `init` writes `~/Library/LaunchAgents/dev.memoryd.plist`, bootstraps it with launchd, and kickstarts `memoryd daemon`. On other platforms, launchd setup is skipped.
 
 Use `--no-daemon` if you only want to create the local files and Git hooks without starting the daemon service:
 
 ```sh
-./agent-memoryd init --no-daemon
+./memoryd init --no-daemon
 ```
+
+Interactive `init` can configure local semantic search with Ollama. The equivalent scripted setup is:
+
+```sh
+ollama pull nomic-embed-text
+./memoryd embedder setup ollama
+./memoryd embedder test
+./memoryd reindex
+```
+
+Restart the daemon after changing embedder config.
 
 By default the data root is:
 
 ```text
-~/.local/share/agent-memoryd
+~/.local/share/memoryd
 ```
 
-Set `AGENT_MEMORYD_HOME` before running commands to use another root:
+Set `MEMORYD_HOME` before running commands to use another root:
 
 ```sh
-AGENT_MEMORYD_HOME=/tmp/agent-memoryd ./agent-memoryd init
+MEMORYD_HOME=/tmp/memoryd ./memoryd init
 ```
-
-## Optional zvec Build
-
-The default build uses a pure-Go lexical index so contributors can run tests without native dependencies. The production retrieval path is available behind the `zvec` build tag.
-
-Download the zvec native libraries and build the tagged binary:
-
-```sh
-mise run zvec-libs
-mise run build-zvec
-```
-
-Then set `index_backend` to `zvec` in the config file and rebuild the index:
-
-```sh
-./agent-memoryd reindex
-```
-
-See [zvec.md](./zvec.md) for details.

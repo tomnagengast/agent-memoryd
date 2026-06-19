@@ -8,33 +8,34 @@ Local memory daemon for coding agents.
 
 ```sh
 mise install
+mise run zvec-libs
 mise run build
-./agent-memoryd --help
-./agent-memoryd --version
-./agent-memoryd init
-./agent-memoryd status
+./memoryd --help
+./memoryd --version
+./memoryd init
+./memoryd status
 ```
 
-In an interactive terminal, `init` asks whether to start fresh or import existing memories. Use `./agent-memoryd init --fresh` for a non-interactive fresh install, or `./agent-memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
+In an interactive terminal, `init` walks through onboarding choices: start fresh or import existing memories, enable default transcript ingestion roots, configure Ollama semantic search, and start the daemon service now. Use `./memoryd init --fresh` for a non-interactive fresh install, or `./memoryd init --import ~/notes/agent` to import an existing JSONL file or markdown/text directory.
 
-`init` also installs managed global Git hooks via `git config --global core.hooksPath` when no global hook path is already configured. On macOS, it installs and starts the managed launchd daemon. Use `./agent-memoryd init --no-daemon` if you only want to skip the daemon service.
+`init` also installs managed global Git hooks via `git config --global core.hooksPath` when no global hook path is already configured. On macOS, it installs and starts the managed launchd daemon. Use `./memoryd init --no-daemon` if you only want to skip the daemon service.
 
 Run the MCP server over stdio:
 
 ```sh
-./agent-memoryd mcp
+./memoryd mcp
 ```
 
 Run the resident ingest worker manually:
 
 ```sh
-./agent-memoryd daemon
+./memoryd daemon
 ```
 
 Explore memories interactively:
 
 ```sh
-./agent-memoryd explore
+./memoryd explore
 ```
 
 Daemon transcript and git producers require a configured `summarizer_command`. The default uses `codex exec` in read-only ephemeral mode.
@@ -42,9 +43,9 @@ Daemon transcript and git producers require a configured `summarizer_command`. T
 Add and retrieve a memory from the CLI:
 
 ```sh
-./agent-memoryd add --project example --summary "Uses local memory" \
+./memoryd add --project example --summary "Uses local memory" \
   "agent-memoryd stores durable local memories for coding agents."
-./agent-memoryd search --project example "local memory"
+./memoryd search --project example "local memory"
 ```
 
 ## Goals
@@ -53,7 +54,7 @@ Add and retrieve a memory from the CLI:
 - MCP tools for `search`, `get`, `add`, `forget`, and `reflect`
 - Agent-managed memories without burning the agent's main turn on note writing
 - Summarizer-driven transcript and git producers that store distilled memories with source pointers
-- Rebuildable source records with zvec-backed retrieval
+- zvec-backed retrieval with hybrid full-text and vector search
 
 ## Non-Goals
 
@@ -63,7 +64,7 @@ Add and retrieve a memory from the CLI:
 
 ## Commands
 
-`init` creates the managed data root, config, memory store, git spool, global Git hook scripts, logs directory, and resource manifest. It can start fresh or import existing memories from an agent-memoryd JSONL file or a markdown/text file tree. It configures Git's global `core.hooksPath` when that setting is unset or already points at the managed hook directory. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
+`init` creates the managed data root, config, zvec store, git spool, global Git hook scripts, logs directory, and resource manifest. It can start fresh or import existing memories from an agent-memoryd JSONL file or a markdown/text file tree, and interactive setup can configure Ollama semantic search. It configures Git's global `core.hooksPath` when that setting is unset or already points at the managed hook directory. On macOS it also writes and starts the managed LaunchAgent unless `--no-daemon` is passed.
 
 `status` prints system help, MCP tool help, loaded config, store status, launchd service status, and every resource persisted by `init`.
 
@@ -81,9 +82,11 @@ Add and retrieve a memory from the CLI:
 
 `launchd-plist` renders a macOS LaunchAgent plist to stdout for manual inspection or advanced installs.
 
-`reindex` rebuilds the configured retrieval index from `memories.jsonl`.
+`embedder status`, `embedder test`, and `embedder setup ollama` configure and verify semantic-search embeddings.
 
-`uninstall --yes` removes managed `agent-memoryd` resources.
+`reindex` backfills vector embeddings for memories that were stored without an embedder configured.
+
+`uninstall --yes` removes managed local memory resources.
 
 ## Docs
 
@@ -105,49 +108,41 @@ This project uses mise for tool and task management.
 
 ```sh
 mise install
+mise run zvec-libs
 mise run test
 mise run build
 ```
 
-`mise run build` stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `AGENT_MEMORYD_VERSION` to override the displayed version for a release build.
+`mise run build` always uses `CGO_ENABLED=1` and links the zvec native library. Run `mise run zvec-libs` first to populate `./lib/`. The build stamps the binary with `git describe --tags --always --dirty`, the short commit, and the UTC build time. Set `MEMORYD_VERSION` to override the displayed version for a release build.
 
 Compare the checked-out binary with the installed one:
 
 ```sh
-./agent-memoryd --version
-agent-memoryd --version
+./memoryd --version
+memoryd --version
 ```
 
-Update the installed binary with an atomic replace:
+Update the installed binary and native library with an atomic install:
 
 ```sh
 mise run install-local
-agent-memoryd init
+memoryd init
 ```
 
-The default build keeps source records in a local JSONL file and uses a small lexical search fallback so contributors can build and test without native zvec libraries.
-
-The production retrieval index uses [`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go) behind the `zvec` build tag. That SDK uses cgo and native zvec libraries, so it is not required for the basic contributor test loop:
-
-```sh
-mise run zvec-libs
-mise run build-zvec
-```
-
-Tagged releases publish lexical macOS and Linux binaries through GitHub Releases. See [docs/install.md](./docs/install.md#install-from-a-github-release) for the install command and asset naming.
+`mise run install-local` rebuilds the binary with an rpath pointing at `~/.local/lib/memoryd/` and copies the native library there, so the installed binary works independently of the repository working tree.
 
 ## Architecture
 
 `agent-memoryd` has four layers:
 
-- Source store: a rebuildable JSONL memory log under `AGENT_MEMORYD_HOME`.
-- Index: lexical by default, zvec-go behind the `zvec` build tag.
+- Store: a zvec-backed collection at `$MEMORYD_HOME/zvec`. All memories are stored here; no separate JSONL source of truth.
 - Ingest: daemon polling for idle transcript JSONL files and git spool events.
-- Retrieval: MCP tools and CLI commands share the same store.
+- IPC: the daemon owns the store and serves CLI/MCP operations over a Unix socket. Store commands require the daemon to be running.
+- Retrieval: hybrid full-text + vector search blended in Go. Embedding is best-effort; records without vectors are full-text searchable and backfilled by `reindex`.
 
 The daemon polls configured transcript roots, waits until a transcript is idle, then passes the transcript plus existing memory summaries to the configured summarizer. Git hooks do not summarize inline; they enqueue a small event file, and the daemon passes `git show` output plus existing memory summaries to the same summarizer. The MCP `reflect` tool uses the same summarizer path for the current session. These producers store distilled memories with transcript, session, or commit references, not raw logs.
 
-`agent-memoryd init` writes a resource manifest to the data root, installs managed global Git hooks when safe, and starts the managed LaunchAgent on macOS. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
+`memoryd init` writes a resource manifest to the data root, installs managed global Git hooks when safe, and starts the managed LaunchAgent on macOS. `status` reads that manifest and reports whether each managed path exists. `uninstall --yes` uses the same manifest to tear down the local system resources it owns.
 
 See [docs/architecture.md](./docs/architecture.md) for more detail.
 
@@ -167,7 +162,7 @@ Creates or updates a memory.
 
 `forget(id)`
 
-Deletes a memory from the local source store and derived index.
+Deletes a memory from the local store.
 
 `reflect(session?, transcript_path?, project?, cwd?, source?, limit?)`
 

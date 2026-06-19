@@ -7,22 +7,25 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 	"github.com/tomnagengast/agent-memoryd/internal/config"
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
+	"github.com/tomnagengast/agent-memoryd/internal/embedder"
 	"github.com/tomnagengast/agent-memoryd/internal/explore"
 	"github.com/tomnagengast/agent-memoryd/internal/githooks"
 	"github.com/tomnagengast/agent-memoryd/internal/importmem"
-	"github.com/tomnagengast/agent-memoryd/internal/indexer"
 	"github.com/tomnagengast/agent-memoryd/internal/launchd"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/spool"
+	"github.com/tomnagengast/agent-memoryd/internal/storerpc"
 	"github.com/tomnagengast/agent-memoryd/internal/version"
 )
 
@@ -31,7 +34,7 @@ func Run(args []string) error {
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
 		if isUsageError(err) {
-			return fmt.Errorf("%w\n\nRun 'agent-memoryd --help' for usage.", err)
+			return fmt.Errorf("%w\n\nRun '%s --help' for usage.", err, version.CommandName)
 		}
 		return err
 	}
@@ -50,7 +53,7 @@ func isUsageError(err error) bool {
 func newRootCommand() *cobra.Command {
 	var showVersion bool
 	root := &cobra.Command{
-		Use:           "agent-memoryd",
+		Use:           version.CommandName,
 		Short:         "Local memory daemon for coding agents.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -75,6 +78,7 @@ func newRootCommand() *cobra.Command {
 		newForgetCommand(),
 		newExploreCommand(),
 		newReindexCommand(),
+		newEmbedderCommand(),
 		newMCPCommand(),
 		newDaemonCommand(),
 		newScanOnceCommand(),
@@ -98,16 +102,15 @@ func newInitCommand() *cobra.Command {
 			if fresh && importPath != "" {
 				return fmt.Errorf("--fresh and --import cannot be used together")
 			}
-			cfg, manifest, err := config.Init(path)
-			if err != nil {
-				return err
+			onboarding := defaultInitOnboarding(fresh, importPath, importProject, noDaemon)
+			if shouldPromptInitOnboarding(cmd) {
+				var err error
+				onboarding, err = promptInitOnboarding(onboarding)
+				if err != nil {
+					return err
+				}
 			}
-			store := memory.NewStore(cfg.StorePath)
-			memoryImport, err := runInitMemoryImport(cmd.Context(), store, initMemoryImportOptions{
-				Fresh:         fresh,
-				ImportPath:    importPath,
-				ImportProject: importProject,
-			})
+			cfg, manifest, err := config.InitWithConfig(path, onboarding.Config(config.Default()))
 			if err != nil {
 				return err
 			}
@@ -123,10 +126,17 @@ func newInitCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var service any = map[string]any{"started": false, "skipped": "disabled by --no-daemon"}
-			if !noDaemon {
+			memoryOpts := onboarding.MemoryImportOptions()
+			var memoryImport initMemoryImportStatus
+			var service any = map[string]any{"started": false, "skipped": "disabled by init choice"}
+			if !onboarding.StartDaemon {
+				memoryImport, err = runInitMemoryImportWithoutDaemon(memoryOpts)
+				if err != nil {
+					return err
+				}
+			} else {
 				status, err := launchd.InstallAndStart(launchd.Config{
-					Label:     "dev.agent-memoryd",
+					Label:     launchd.DefaultLabel,
 					Binary:    exe,
 					Root:      cfg.Root,
 					LogDir:    filepath.Join(cfg.Root, "logs"),
@@ -136,6 +146,18 @@ func newInitCommand() *cobra.Command {
 					return err
 				}
 				service = status
+				if err := waitForDaemon(cmd.Context(), cfg); err != nil {
+					return err
+				}
+				_, store, err := dialOrOpen()
+				if err != nil {
+					return err
+				}
+				defer store.Close()
+				memoryImport, err = runInitMemoryImport(cmd.Context(), store, memoryOpts)
+				if err != nil {
+					return err
+				}
 				manifest, err = config.LoadManifest(cfg.Root)
 				if err != nil {
 					return err
@@ -153,6 +175,8 @@ func newInitCommand() *cobra.Command {
 				"service":       service,
 				"git_hooks":     gitHooks,
 				"memory_import": memoryImport,
+				"embedder":      initEmbedderStatus(cmd.Context(), cfg),
+				"onboarding":    onboarding.Status(),
 			})
 		},
 	}
@@ -183,7 +207,7 @@ func newUninstallCommand() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove managed agent-memoryd resources.",
+		Short: "Remove managed local memory resources.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
@@ -193,7 +217,7 @@ func newUninstallCommand() *cobra.Command {
 			return runUninstall(cfg, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "remove all managed agent-memoryd resources")
+	cmd.Flags().BoolVar(&yes, "yes", false, "remove all managed local memory resources")
 	return cmd
 }
 
@@ -204,10 +228,11 @@ func newAddCommand() *cobra.Command {
 		Short: "Create or update a memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			req.Body = args[0]
 			record, err := store.Add(cmd.Context(), req)
 			if err != nil {
@@ -231,10 +256,11 @@ func newSearchCommand() *cobra.Command {
 		Short: "Search memory summaries.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			req.Query = args[0]
 			results, err := store.Search(cmd.Context(), req)
 			if err != nil {
@@ -255,10 +281,11 @@ func newGetCommand() *cobra.Command {
 		Short: "Fetch one full memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			record, err := store.Get(cmd.Context(), args[0])
 			if errors.Is(err, memory.ErrNotFound) {
 				return printJSON(map[string]any{"found": false, "id": args[0]})
@@ -277,10 +304,11 @@ func newForgetCommand() *cobra.Command {
 		Short: "Delete one memory.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			err = store.Forget(cmd.Context(), args[0])
 			if errors.Is(err, memory.ErrNotFound) {
 				return printJSON(map[string]any{"ok": false, "id": args[0]})
@@ -300,10 +328,11 @@ func newExploreCommand() *cobra.Command {
 		Short: "Explore memories in an interactive TUI.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return explore.Run(cmd.Context(), store, opts)
 		},
 	}
@@ -314,19 +343,109 @@ func newExploreCommand() *cobra.Command {
 func newReindexCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reindex",
-		Short: "Rebuild the configured retrieval index from the source store.",
+		Short: "Embed memories that are missing vectors.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, store, err := loadIndexedStore()
+			_, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
-			if err := store.RebuildIndex(cmd.Context()); err != nil {
+			defer store.Close()
+			count, err := store.Backfill(cmd.Context())
+			if err != nil {
 				return err
 			}
-			return printJSON(map[string]any{"ok": true})
+			return printJSON(map[string]any{"ok": true, "embedded": count})
 		},
 	}
+}
+
+func newEmbedderCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "embedder",
+		Short: "Configure and test semantic-search embeddings.",
+		Args:  cobra.NoArgs,
+	}
+	cmd.AddCommand(
+		newEmbedderStatusCommand(),
+		newEmbedderTestCommand(),
+		newEmbedderSetupCommand(),
+	)
+	return cmd
+}
+
+func newEmbedderStatusCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show configured embedder provider.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			return printJSON(embedderStatus(cfg))
+		},
+	}
+}
+
+func newEmbedderTestCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "test",
+		Short: "Run a probe embedding with the configured provider.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			result := probeEmbedder(cmd.Context(), cfg)
+			if !result.OK {
+				return fmt.Errorf("embedder test failed: %s", result.Error)
+			}
+			return printJSON(result)
+		},
+	}
+}
+
+func newEmbedderSetupCommand() *cobra.Command {
+	var model string
+	var url string
+	var dimension int
+	cmd := &cobra.Command{
+		Use:   "setup ollama",
+		Short: "Configure Ollama semantic search.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[0] != embedder.ProviderOllama {
+				return fmt.Errorf("unsupported embedder provider %q", args[0])
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			cfg.EmbedderProvider = embedder.ProviderOllama
+			cfg.EmbedderModel = model
+			cfg.EmbedderURL = url
+			cfg.EmbedderCommand = nil
+			cfg.EmbeddingDim = dimension
+			if err := config.Write("", cfg); err != nil {
+				return err
+			}
+			probe := probeEmbedder(cmd.Context(), cfg)
+			return printJSON(map[string]any{
+				"ok":         true,
+				"config":     config.ConfigPath(cfg.Root),
+				"embedder":   embedderStatus(cfg),
+				"probe":      probe,
+				"next_steps": embedderNextSteps(cfg, probe),
+			})
+		},
+	}
+	cmd.Flags().StringVar(&model, "model", "nomic-embed-text", "Ollama embedding model")
+	cmd.Flags().StringVar(&url, "url", "http://127.0.0.1:11434", "Ollama base URL")
+	cmd.Flags().IntVar(&dimension, "dimension", 768, "expected embedding dimension")
+	return cmd
 }
 
 func newMCPCommand() *cobra.Command {
@@ -335,10 +454,11 @@ func newMCPCommand() *cobra.Command {
 		Short: "Run the MCP stdio server.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadIndexedStore()
+			cfg, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return runMCP(cmd.Context(), cfg, store)
 		},
 	}
@@ -350,10 +470,11 @@ func newDaemonCommand() *cobra.Command {
 		Short: "Run the resident ingest worker.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadIndexedStore()
+			cfg, store, err := loadStore()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return runDaemon(cfg, store)
 		},
 	}
@@ -365,10 +486,11 @@ func newScanOnceCommand() *cobra.Command {
 		Short: "Process git spool events and idle transcripts once.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, store, err := loadIndexedStore()
+			cfg, store, err := dialOrOpen()
 			if err != nil {
 				return err
 			}
+			defer store.Close()
 			return runScanOnce(cmd.Context(), cfg, store)
 		},
 	}
@@ -437,30 +559,168 @@ func newLaunchdPlistCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&bin, "bin", "", "agent-memoryd binary path")
-	cmd.Flags().StringVar(&label, "label", "dev.agent-memoryd", "launchd label")
+	cmd.Flags().StringVar(&bin, "bin", "", "memoryd binary path")
+	cmd.Flags().StringVar(&label, "label", launchd.DefaultLabel, "launchd label")
 	return cmd
 }
 
-func loadIndexedStore() (config.Config, *memory.Store, error) {
+// loadStore opens the zvec store directly.  Used only by the daemon command,
+// which is the exclusive process-level owner of the collection.
+func loadStore() (config.Config, *memory.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return config.Config{}, nil, err
 	}
-	index, err := indexer.New(cfg)
+	emb, err := configuredEmbedder(cfg)
 	if err != nil {
 		return config.Config{}, nil, err
 	}
-	return cfg, memory.NewStoreWithIndex(cfg.StorePath, index), nil
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     cfg.ZvecPath,
+		EmbeddingDim: cfg.EmbeddingDim,
+		LockTimeout:  cfg.LockTimeout,
+		FTSWeight:    cfg.SearchFTSWeight,
+		VectorWeight: cfg.SearchVectorWeight,
+		Embedder:     emb,
+	})
+	if err != nil {
+		return config.Config{}, nil, err
+	}
+	return cfg, store, nil
+}
+
+func configuredEmbedder(cfg config.Config) (embedder.Embedder, error) {
+	return embedder.NewProvider(embedder.ProviderConfig{
+		Provider: cfg.EmbedderProvider,
+		Command:  cfg.EmbedderCommand,
+		Timeout:  cfg.EmbedderTimeout,
+		Model:    cfg.EmbedderModel,
+		URL:      cfg.EmbedderURL,
+	})
+}
+
+type embedderProbeResult struct {
+	OK        bool   `json:"ok"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model,omitempty"`
+	Dimension int    `json:"dimension,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+func embedderStatus(cfg config.Config) map[string]any {
+	provider := effectiveEmbedderProvider(cfg)
+	status := map[string]any{
+		"configured":    provider != embedder.ProviderDisabled,
+		"provider":      provider,
+		"embedding_dim": cfg.EmbeddingDim,
+	}
+	if provider == embedder.ProviderOllama {
+		status["model"] = cfg.EmbedderModel
+		status["url"] = cfg.EmbedderURL
+		status["ollama_cli"] = executableStatus("ollama")
+	}
+	if provider == embedder.ProviderCommand {
+		status["command"] = cfg.EmbedderCommand
+	}
+	return status
+}
+
+func effectiveEmbedderProvider(cfg config.Config) string {
+	return embedder.EffectiveProvider(embedder.ProviderConfig{
+		Provider: cfg.EmbedderProvider,
+		Command:  cfg.EmbedderCommand,
+	})
+}
+
+func probeEmbedder(ctx context.Context, cfg config.Config) embedderProbeResult {
+	provider := effectiveEmbedderProvider(cfg)
+	result := embedderProbeResult{
+		Provider: provider,
+		Model:    cfg.EmbedderModel,
+	}
+	emb, err := configuredEmbedder(cfg)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	vec, err := emb.Embed(ctx, "memoryd embedder probe")
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.OK = true
+	result.Dimension = len(vec)
+	return result
+}
+
+func executableStatus(name string) map[string]any {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return map[string]any{"found": false}
+	}
+	return map[string]any{"found": true, "path": path}
+}
+
+func embedderNextSteps(cfg config.Config, probe embedderProbeResult) []string {
+	if probe.OK {
+		return []string{
+			"restart the memoryd daemon so it reloads config",
+			"run `memoryd reindex` to backfill existing memories",
+		}
+	}
+	if effectiveEmbedderProvider(cfg) == embedder.ProviderOllama {
+		steps := []string{}
+		if _, err := exec.LookPath("ollama"); err != nil {
+			steps = append(steps, "install Ollama from https://ollama.com/download")
+		}
+		steps = append(steps,
+			fmt.Sprintf("run `ollama pull %s`", cfg.EmbedderModel),
+			"start Ollama if it is not already running",
+			"run `memoryd embedder test`",
+			"restart the memoryd daemon, then run `memoryd reindex`",
+		)
+		return steps
+	}
+	return []string{"configure an embedder provider, then run `memoryd embedder test`"}
+}
+
+func initEmbedderStatus(ctx context.Context, cfg config.Config) map[string]any {
+	status := embedderStatus(cfg)
+	if effectiveEmbedderProvider(cfg) == embedder.ProviderDisabled {
+		status["next_steps"] = []string{"run `memoryd embedder setup ollama` to enable semantic search later"}
+		return status
+	}
+	probe := probeEmbedder(ctx, cfg)
+	status["probe"] = probe
+	status["next_steps"] = embedderNextSteps(cfg, probe)
+	return status
+}
+
+var errDaemonNotRunning = errors.New("memoryd daemon is not running")
+
+// dialOrOpen returns an RPC client for the daemon-owned store.  The daemon is
+// the only process that may open zvec directly.
+func dialOrOpen() (config.Config, memory.API, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.Config{}, nil, err
+	}
+	if storerpc.Probe(cfg) {
+		return cfg, storerpc.NewClient(cfg), nil
+	}
+	return config.Config{}, nil, fmt.Errorf("%w; start it with `memoryd daemon` or run `memoryd init`", errDaemonNotRunning)
 }
 
 func runStatus(ctx context.Context, cfg config.Config) error {
-	store := memory.NewStore(cfg.StorePath)
+	_, store, err := dialOrOpen()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
 	status, err := store.Status(ctx)
 	if err != nil {
 		return err
 	}
-	status.Index = cfg.IndexBackend
 	manifest, err := config.LoadManifest(cfg.Root)
 	if err != nil {
 		return err
@@ -471,7 +731,7 @@ func runStatus(ctx context.Context, cfg config.Config) error {
 		"config":      cfg,
 		"store":       status,
 		"service": launchd.CurrentStatus(launchd.Config{
-			Label:     "dev.agent-memoryd",
+			Label:     launchd.DefaultLabel,
 			PlistPath: config.LaunchdPlistPath(),
 		}),
 		"git_hooks": githooks.CurrentStatus(cfg),
@@ -488,7 +748,7 @@ func runUninstall(cfg config.Config, yes bool) error {
 		return printJSON(map[string]any{
 			"ok":         false,
 			"needs_yes":  true,
-			"message":    "rerun with --yes to remove managed agent-memoryd resources",
+			"message":    "rerun with --yes to remove managed local memory resources",
 			"resources":  manifest.Resources,
 			"help":       systemHelp(),
 			"configured": cfg.Root,
@@ -516,7 +776,83 @@ type initMemoryImportStatus struct {
 	Existing int               `json:"existing,omitempty"`
 }
 
-func runInitMemoryImport(ctx context.Context, store *memory.Store, opts initMemoryImportOptions) (initMemoryImportStatus, error) {
+type initOnboarding struct {
+	Interactive    bool
+	MemoryMode     string
+	ImportPath     string
+	ImportProject  string
+	StartDaemon    bool
+	TranscriptMode string
+	EmbedderMode   string
+}
+
+func defaultInitOnboarding(fresh bool, importPath, importProject string, noDaemon bool) initOnboarding {
+	memoryMode := "prompt"
+	if fresh {
+		memoryMode = "fresh"
+	}
+	if importPath != "" {
+		memoryMode = "import"
+	}
+	return initOnboarding{
+		MemoryMode:     memoryMode,
+		ImportPath:     importPath,
+		ImportProject:  importProject,
+		StartDaemon:    !noDaemon,
+		TranscriptMode: "default",
+		EmbedderMode:   embedder.ProviderDisabled,
+	}
+}
+
+func shouldPromptInitOnboarding(cmd *cobra.Command) bool {
+	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
+		return false
+	}
+	for _, flag := range []string{"fresh", "import", "import-project", "no-daemon"} {
+		if cmd.Flags().Changed(flag) {
+			return false
+		}
+	}
+	return true
+}
+
+func (o initOnboarding) Config(cfg config.Config) config.Config {
+	if o.TranscriptMode == "disabled" {
+		cfg.TranscriptRoots = []string{}
+	}
+	if o.EmbedderMode == embedder.ProviderOllama {
+		cfg.EmbedderProvider = embedder.ProviderOllama
+		cfg.EmbedderModel = "nomic-embed-text"
+		cfg.EmbedderURL = "http://127.0.0.1:11434"
+		cfg.EmbedderCommand = nil
+		cfg.EmbeddingDim = 768
+	}
+	return cfg
+}
+
+func (o initOnboarding) MemoryImportOptions() initMemoryImportOptions {
+	return initMemoryImportOptions{
+		Fresh:         o.MemoryMode == "fresh",
+		ImportPath:    o.ImportPath,
+		ImportProject: o.ImportProject,
+	}
+}
+
+func (o initOnboarding) Status() map[string]any {
+	memoryMode := o.MemoryMode
+	if memoryMode == "prompt" {
+		memoryMode = "fresh"
+	}
+	return map[string]any{
+		"interactive":      o.Interactive,
+		"memory_mode":      memoryMode,
+		"start_daemon":     o.StartDaemon,
+		"transcript_roots": o.TranscriptMode,
+		"embedder":         o.EmbedderMode,
+	}
+}
+
+func runInitMemoryImport(ctx context.Context, store memory.API, opts initMemoryImportOptions) (initMemoryImportStatus, error) {
 	if opts.ImportPath != "" {
 		result, err := importmem.Import(ctx, store, importmem.Options{Path: opts.ImportPath, Project: opts.ImportProject})
 		if err != nil {
@@ -537,42 +873,78 @@ func runInitMemoryImport(ctx context.Context, store *memory.Store, opts initMemo
 	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
 		return initMemoryImportStatus{Mode: "fresh", Skipped: "non-interactive default"}, nil
 	}
-	choice, err := promptMemoryImport()
-	if err != nil {
-		return initMemoryImportStatus{}, err
-	}
-	if choice.ImportPath == "" {
-		return initMemoryImportStatus{Mode: "fresh"}, nil
-	}
-	result, err := importmem.Import(ctx, store, importmem.Options{Path: choice.ImportPath, Project: choice.ImportProject})
-	if err != nil {
-		return initMemoryImportStatus{}, err
-	}
-	return initMemoryImportStatus{Mode: "import", Result: &result}, nil
+	return initMemoryImportStatus{Mode: "fresh"}, nil
 }
 
-type memoryImportChoice struct {
-	ImportPath    string
-	ImportProject string
+func runInitMemoryImportWithoutDaemon(opts initMemoryImportOptions) (initMemoryImportStatus, error) {
+	if opts.ImportPath != "" {
+		return initMemoryImportStatus{}, fmt.Errorf("--import requires the daemon; remove --no-daemon or run memoryd daemon first")
+	}
+	status := initMemoryImportStatus{Mode: "fresh", Skipped: "daemon disabled by --no-daemon"}
+	if opts.Fresh {
+		status.Skipped = ""
+	}
+	return status, nil
 }
 
-func promptMemoryImport() (memoryImportChoice, error) {
-	mode := "fresh"
-	if err := huh.NewSelect[string]().
-		Title("Memory setup").
-		Options(
-			huh.NewOption("Start fresh", "fresh"),
-			huh.NewOption("Import existing memories", "import"),
-		).
-		Value(&mode).
-		Run(); err != nil {
-		return memoryImportChoice{}, err
+func promptInitOnboarding(initial initOnboarding) (initOnboarding, error) {
+	choice := initial
+	choice.Interactive = true
+	if choice.MemoryMode == "prompt" {
+		choice.MemoryMode = "fresh"
 	}
-	if mode != "import" {
-		return memoryImportChoice{}, nil
+	configureSemantic := choice.EmbedderMode == embedder.ProviderOllama
+	if _, err := exec.LookPath("ollama"); err == nil {
+		configureSemantic = true
 	}
-	var choice memoryImportChoice
-	if err := huh.NewForm(huh.NewGroup(
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Memory setup").
+			Description("Start empty or import JSONL, markdown, or text memories after the daemon starts.").
+			Options(
+				huh.NewOption("Start fresh", "fresh"),
+				huh.NewOption("Import existing memories", "import"),
+			).
+			Value(&choice.MemoryMode),
+		huh.NewSelect[string]().
+			Title("Transcript ingestion").
+			Description("The daemon can summarize idle Claude, Codex, and opencode transcripts.").
+			Options(
+				huh.NewOption("Enable default transcript roots", "default"),
+				huh.NewOption("Disable transcript ingestion", "disabled"),
+			).
+			Value(&choice.TranscriptMode),
+		huh.NewConfirm().
+			Title("Configure semantic search with Ollama/nomic-embed-text?").
+			Description("Uses local Ollama embeddings through http://127.0.0.1:11434/api/embed.").
+			Affirmative("Use Ollama").
+			Negative("Skip for now").
+			Value(&configureSemantic),
+		huh.NewConfirm().
+			Title("Start the background daemon now?").
+			Description("The daemon owns zvec and serves CLI/MCP store operations over the local socket.").
+			Affirmative("Start daemon").
+			Negative("Skip service").
+			Value(&choice.StartDaemon),
+	))
+	applyHuhOptions(form)
+	if err := form.Run(); err != nil {
+		return initOnboarding{}, err
+	}
+	if configureSemantic {
+		choice.EmbedderMode = embedder.ProviderOllama
+	} else {
+		choice.EmbedderMode = embedder.ProviderDisabled
+	}
+	if choice.MemoryMode == "import" && !choice.StartDaemon {
+		return initOnboarding{}, fmt.Errorf("import requires the daemon; choose fresh setup or start the background daemon")
+	}
+	if choice.MemoryMode != "import" {
+		choice.ImportPath = ""
+		choice.ImportProject = ""
+		return choice, nil
+	}
+	importForm := huh.NewForm(huh.NewGroup(
 		huh.NewInput().
 			Title("Import path").
 			Description("JSONL file, markdown file, text file, or directory").
@@ -592,12 +964,20 @@ func promptMemoryImport() (memoryImportChoice, error) {
 			Title("Project for text memories").
 			Description("Optional; JSONL records keep their own project values").
 			Value(&choice.ImportProject),
-	)).Run(); err != nil {
-		return memoryImportChoice{}, err
+	))
+	applyHuhOptions(importForm)
+	if err := importForm.Run(); err != nil {
+		return initOnboarding{}, err
 	}
 	choice.ImportPath = strings.TrimSpace(choice.ImportPath)
 	choice.ImportProject = strings.TrimSpace(choice.ImportProject)
 	return choice, nil
+}
+
+func applyHuhOptions(form *huh.Form) {
+	if os.Getenv("MEMORYD_ACCESSIBLE") != "" || os.Getenv("ACCESSIBLE") != "" {
+		form.WithAccessible(true)
+	}
 }
 
 func isTerminal(file *os.File) bool {
@@ -618,22 +998,69 @@ func expandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
+func waitForDaemon(ctx context.Context, cfg config.Config) error {
+	timeout := cfg.LockTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if storerpc.Probe(cfg) {
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("%w; socket %s did not become available", errDaemonNotRunning, storerpc.SocketPath(cfg))
+		case <-ticker.C:
+		}
+	}
+}
+
 func runDaemon(cfg config.Config, store *memory.Store) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Start the RPC server so CLI/MCP processes can talk to us via the socket
+	// instead of opening zvec directly (zvec takes a fully-exclusive lock).
+	srv := storerpc.NewServer(store)
+	ln, err := srv.Listen(cfg)
+	if err != nil {
+		return fmt.Errorf("start rpc server: %w", err)
+	}
+	sockPath := storerpc.SocketPath(cfg)
+	srvDone := make(chan error, 1)
+	go func() {
+		srvDone <- srv.Serve(ctx, ln)
+	}()
+	defer func() {
+		ln.Close()
+		os.Remove(sockPath)
+		<-srvDone
+	}()
+
 	d := daemon.Daemon{
 		Config: cfg,
 		Store:  store,
 		Log:    slog.Default(),
 	}
-	err := d.Run(ctx)
-	if errors.Is(err, context.Canceled) {
+	runErr := d.Run(ctx)
+
+	// On graceful shutdown, optimize before the caller's deferred store.Close()
+	// runs so that any records added via RPC since the last pass are FTS-durable.
+	if optErr := store.Optimize(context.Background()); optErr != nil {
+		slog.Warn("daemon: optimize on shutdown failed", "error", optErr)
+	}
+
+	if errors.Is(runErr, context.Canceled) {
 		return nil
 	}
-	return err
+	return runErr
 }
 
-func runScanOnce(ctx context.Context, cfg config.Config, store *memory.Store) error {
+func runScanOnce(ctx context.Context, cfg config.Config, store memory.API) error {
 	d := daemon.Daemon{Config: cfg, Store: store}
 	if err := d.Once(ctx); err != nil {
 		return err
@@ -662,7 +1089,7 @@ type helpItem struct {
 var commandHelp = []helpItem{
 	{Name: "init", Summary: "create config, choose memory import mode, install hooks, and start the daemon"},
 	{Name: "status", Summary: "show help, config, store status, and managed resources"},
-	{Name: "uninstall --yes", Summary: "remove managed agent-memoryd resources"},
+	{Name: "uninstall --yes", Summary: "remove managed local memory resources"},
 	{Name: "help [command]", Summary: "show command help"},
 	{Name: "completion", Summary: "generate shell completion scripts"},
 	{Name: "mcp", Summary: "run the MCP stdio server"},
@@ -675,7 +1102,8 @@ var commandHelp = []helpItem{
 	{Name: "get", Summary: "fetch one full memory"},
 	{Name: "forget", Summary: "delete one memory"},
 	{Name: "explore", Summary: "explore memories in an interactive TUI"},
-	{Name: "reindex", Summary: "rebuild the configured retrieval index from the source store"},
+	{Name: "reindex", Summary: "backfill vector embeddings for memories missing them"},
+	{Name: "embedder", Summary: "configure and test semantic-search embeddings"},
 }
 
 var mcpToolHelp = []helpItem{

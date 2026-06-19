@@ -1,6 +1,6 @@
 # MCP tools
 
-`agent-memoryd mcp` runs a stdio MCP server (server name `agent-memoryd`) exposing five tools. CLI and MCP share the same store code, so anything below mirrors the CLI behavior in [cli.md](cli.md) and the model in [data-model.md](data-model.md).
+`memoryd mcp` runs a stdio MCP server (server name `agent-memoryd`) exposing five tools. CLI and MCP share the same store code, so anything below mirrors the CLI behavior in [cli.md](cli.md) and the model in [data-model.md](data-model.md).
 
 ## Client config
 
@@ -9,15 +9,15 @@
   "mcpServers": {
     "agent-memoryd": {
       "type": "stdio",
-      "command": "agent-memoryd",
+      "command": "memoryd",
       "args": ["mcp"],
-      "env": { "AGENT_MEMORYD_HOME": "/Users/you/.local/share/agent-memoryd" }
+      "env": { "MEMORYD_HOME": "/Users/you/.local/share/memoryd" }
     }
   }
 }
 ```
 
-`AGENT_MEMORYD_HOME` is optional; without it the server uses the default root. The tool resolves the same `config.json`/store as the CLI.
+`MEMORYD_HOME` is optional; without it the server uses the default root. The tool resolves the same `config.json`/store as the CLI.
 
 ## Tools
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestInitPersistsManagedResources(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", filepath.Join(t.TempDir(), "agent-memoryd"))
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
 
 	cfg, manifest, err := Init("")
 	if err != nil {
@@ -20,7 +20,6 @@ func TestInitPersistsManagedResources(t *testing.T) {
 		cfg.Root,
 		ConfigPath(cfg.Root),
 		ManifestPath(cfg.Root),
-		cfg.StorePath,
 		cfg.SpoolDir,
 		filepath.Join(cfg.Root, "logs"),
 	}
@@ -41,10 +40,43 @@ func TestInitPersistsManagedResources(t *testing.T) {
 	if !foundGitHooks {
 		t.Fatalf("manifest resources missing managed git hooks: %#v", manifest.Resources)
 	}
+	if _, err := os.Stat(cfg.StorePath); !os.IsNotExist(err) {
+		t.Fatalf("legacy store path stat err = %v, want not exist", err)
+	}
+	for _, resource := range manifest.Resources {
+		if resource.Name == "memory source store" {
+			t.Fatalf("manifest includes deprecated JSONL store resource: %#v", manifest.Resources)
+		}
+	}
+}
+
+func TestLoadManifestFiltersDeprecatedMemorySourceStore(t *testing.T) {
+	root := t.TempDir()
+	manifest := Manifest{
+		Version: manifestVersion,
+		Resources: []Resource{
+			{Name: "data root", Type: "directory", Path: root, Managed: true},
+			{Name: "memory source store", Type: "data-file", Path: filepath.Join(root, "memories.jsonl"), Managed: true},
+		},
+	}
+	if err := WriteManifest(root, manifest); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	loaded, err := LoadManifest(root)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if len(loaded.Resources) != 1 {
+		t.Fatalf("resource count = %d, want 1: %#v", len(loaded.Resources), loaded.Resources)
+	}
+	if loaded.Resources[0].Name != "data root" {
+		t.Fatalf("remaining resource = %#v, want data root", loaded.Resources[0])
+	}
 }
 
 func TestUninstallRemovesManagedRoot(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", filepath.Join(t.TempDir(), "agent-memoryd"))
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
 
 	cfg, manifest, err := Init("")
 	if err != nil {
@@ -59,7 +91,7 @@ func TestUninstallRemovesManagedRoot(t *testing.T) {
 }
 
 func TestInitWritesSummarizerConfig(t *testing.T) {
-	t.Setenv("AGENT_MEMORYD_HOME", filepath.Join(t.TempDir(), "agent-memoryd"))
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
 
 	cfg, _, err := Init("")
 	if err != nil {
@@ -72,6 +104,9 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	var disk struct {
 		SummarizerCommand  []string `json:"summarizer_command"`
 		SummarizerTimeout  string   `json:"summarizer_timeout"`
+		EmbedderProvider   string   `json:"embedder_provider"`
+		EmbedderModel      string   `json:"embedder_model"`
+		EmbedderURL        string   `json:"embedder_url"`
 		MemoryContextLimit int      `json:"memory_context_limit"`
 	}
 	if err := json.Unmarshal(data, &disk); err != nil {
@@ -86,6 +121,9 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	if disk.MemoryContextLimit != 12 {
 		t.Fatalf("memory_context_limit = %d, want 12", disk.MemoryContextLimit)
 	}
+	if disk.EmbedderProvider != "disabled" || disk.EmbedderModel != "nomic-embed-text" || disk.EmbedderURL != "http://127.0.0.1:11434" {
+		t.Fatalf("embedder config = provider %q model %q url %q", disk.EmbedderProvider, disk.EmbedderModel, disk.EmbedderURL)
+	}
 
 	loaded, err := Load()
 	if err != nil {
@@ -96,6 +134,34 @@ func TestInitWritesSummarizerConfig(t *testing.T) {
 	}
 	if loaded.MemoryContextLimit != 12 {
 		t.Fatalf("loaded memory context limit = %d, want 12", loaded.MemoryContextLimit)
+	}
+	if loaded.EmbedderProvider != "disabled" || loaded.EmbedderModel != "nomic-embed-text" || loaded.EmbedderURL != "http://127.0.0.1:11434" {
+		t.Fatalf("loaded embedder config = %#v", loaded)
+	}
+}
+
+func TestInitWithConfigPersistsChosenTranscriptRoots(t *testing.T) {
+	t.Setenv("MEMORYD_HOME", filepath.Join(t.TempDir(), "memoryd"))
+	cfg := Default()
+	cfg.TranscriptRoots = []string{}
+
+	written, _, err := InitWithConfig("", cfg)
+	if err != nil {
+		t.Fatalf("init with config: %v", err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if len(loaded.TranscriptRoots) != 0 {
+		t.Fatalf("loaded transcript roots = %#v, want disabled", loaded.TranscriptRoots)
+	}
+	data, err := os.ReadFile(ConfigPath(written.Root))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), `"transcript_roots": []`) {
+		t.Fatalf("config did not persist empty transcript_roots: %s", data)
 	}
 }
 

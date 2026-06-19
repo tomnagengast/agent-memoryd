@@ -1,20 +1,24 @@
 # Daemon
 
-`agent-memoryd daemon` runs the resident ingest worker. It processes queued git events and scans configured transcript roots on a polling interval.
+`memoryd daemon` runs the resident ingest worker. It processes queued git events and scans configured transcript roots on a polling interval.
 
-On macOS, `agent-memoryd init` installs and starts this daemon through launchd by default. Use `agent-memoryd init --no-daemon` to skip service setup.
+On macOS, `memoryd init` installs and starts this daemon through launchd by default. Use `memoryd init --no-daemon` to skip service setup.
 
 Run the daemon in the foreground:
 
 ```sh
-./agent-memoryd daemon
+./memoryd daemon
 ```
 
 Run one pass without staying resident:
 
 ```sh
-./agent-memoryd scan-once
+./memoryd scan-once
 ```
+
+## Store Ownership
+
+The daemon holds the zvec collection exclusively for its lifetime. It serves all store operations (add, search, get, forget, list, status, reindex) over a Unix socket at `$MEMORYD_HOME/memoryd.sock`. CLI commands and the MCP server route through that socket and never open zvec directly.
 
 ## Transcript Ingestion
 
@@ -39,7 +43,7 @@ The MCP `reflect` tool uses the same summarizer behavior on demand. It can summa
 Git hooks should not summarize commits inline. They enqueue a small event file with the repository path and commit sha:
 
 ```sh
-./agent-memoryd enqueue-git \
+./memoryd enqueue-git \
   --repo "$(git rev-parse --show-toplevel)" \
   --sha "$(git rev-parse HEAD)"
 ```
@@ -75,17 +79,17 @@ If the summarizer command fails, daemon logs include the command failure and out
 `init` writes the managed LaunchAgent to:
 
 ```text
-~/Library/LaunchAgents/dev.agent-memoryd.plist
+~/Library/LaunchAgents/dev.memoryd.plist
 ```
 
 It then runs `launchctl bootstrap` and `launchctl kickstart` so the daemon is up immediately.
 
-The plist includes `AGENT_MEMORYD_HOME` and the PATH from the shell that ran `init`, so default commands such as `codex` can be found when launchd starts the daemon.
+The plist includes `MEMORYD_HOME` and the PATH from the shell that ran `init`, so default commands such as `codex` can be found when launchd starts the daemon.
 
 Render a macOS LaunchAgent plist without installing it:
 
 ```sh
-./agent-memoryd launchd-plist --bin /absolute/path/to/agent-memoryd
+./memoryd launchd-plist --bin /absolute/path/to/memoryd
 ```
 
 The command writes plist XML to stdout for inspection or advanced manual installs.
@@ -95,7 +99,7 @@ The command writes plist XML to stdout for inspection or advanced manual install
 The rendered LaunchAgent writes stdout and stderr logs under:
 
 ```text
-$AGENT_MEMORYD_HOME/logs
+$MEMORYD_HOME/logs
 ```
 
 ## Privacy

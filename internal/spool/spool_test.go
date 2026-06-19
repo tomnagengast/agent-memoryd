@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/tomnagengast/agent-memoryd/internal/ingeststate"
-	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
 )
 
@@ -37,7 +36,7 @@ func TestProcessGitStoresSummarizedMemoryWithCommitReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	spoolDir := t.TempDir()
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatalf("create repo dir: %v", err)
@@ -89,7 +88,7 @@ func TestProcessGitQuarantinesRepeatedFailure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	spoolDir := t.TempDir()
-	store := memory.NewStore(filepath.Join(t.TempDir(), "memories.jsonl"))
+	store := newTestStore(t)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatalf("create repo dir: %v", err)

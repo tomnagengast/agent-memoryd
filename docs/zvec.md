@@ -1,47 +1,45 @@
 # zvec
 
-The default `agent-memoryd` build uses a pure-Go lexical index. That keeps the contributor loop simple and avoids native dependencies for ordinary tests.
-
-The production retrieval backend uses `github.com/zvec-ai/zvec-go` behind the `zvec` build tag.
+`agent-memoryd` uses [`github.com/zvec-ai/zvec-go`](https://github.com/zvec-ai/zvec-go) as its sole store backend. zvec provides full-text search (FTS), vector search, and durable WAL-backed storage in a single collection.
 
 ## Build
 
-Download native zvec libraries:
+Download native zvec libraries before building:
 
 ```sh
 mise run zvec-libs
 ```
 
-Build the zvec-enabled binary:
+This fetches prebuilt libraries into `./lib/` for the current platform. Build is always cgo:
 
 ```sh
-mise run build-zvec
+mise run build
 ```
 
-`build-zvec` sets cgo include and linker flags for the downloaded libraries and writes the binary to `./agent-memoryd`.
+The binary is written to `./memoryd`. There is no pure-Go fallback build. The native library is required.
 
-## Configure
+## Store Layout
 
-Set the index backend in `$AGENT_MEMORYD_HOME/config.json`:
+The zvec collection lives at `$MEMORYD_HOME/zvec`. Each record is stored as a zvec document with string fields (`kind`, `project`, `source`, `summary`, `body`, `created_at`, `updated_at`) and an optional `embedding` vector field.
 
-```json
-{
-  "index_backend": "zvec"
-}
-```
+The embedding field is nullable. Records without an embedding are still stored and fully searchable via FTS. Run `reindex` to backfill embeddings for records that were stored before an embedder was configured.
 
-Keep the rest of the generated config fields unless you are intentionally moving the data root, source store, index path, or ingest paths.
+## Prebuilt Native Libraries
 
-## Rebuild
+Supported platforms for prebuilt libraries:
 
-The zvec index is derived from `memories.jsonl`. Rebuild it whenever switching backends or after changing index storage:
+- macOS arm64 (`darwin_arm64`)
+- Linux amd64 (`linux_amd64`)
+- Linux arm64 (`linux_arm64`)
 
-```sh
-./agent-memoryd reindex
-```
+The `./lib/` directory is gitignored. Run `mise run zvec-libs` after each checkout to populate it.
 
-## Native Library Notes
+## Runtime Library Location
 
-The downloaded native libraries live in `./lib`, which is ignored by git. The default `mise run build` command does not require this directory.
+When running `mise run build`, the binary embeds an rpath pointing at the working-tree `./lib/` directory. This is suitable for development.
 
-Supported prebuilt platforms in the current task are macOS arm64, Linux amd64, and Linux arm64. Other platforms need native zvec libraries and matching cgo flags.
+When running `mise run install-local`, the binary is rebuilt with an rpath pointing at `~/.local/lib/memoryd/`, and the native library is copied there. This makes the installed binary independent of the repository checkout location.
+
+## Tokenizer
+
+FTS uses the `standard` tokenizer. This tokenizer lowercases and splits on whitespace and punctuation. It covers most code identifiers and natural language well enough for local memory search.

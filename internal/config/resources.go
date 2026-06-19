@@ -28,7 +28,10 @@ type Manifest struct {
 }
 
 func Init(path string) (Config, Manifest, error) {
-	cfg := Default()
+	return InitWithConfig(path, Default())
+}
+
+func InitWithConfig(path string, cfg Config) (Config, Manifest, error) {
 	if path == "" {
 		path = ConfigPath(cfg.Root)
 	}
@@ -39,17 +42,6 @@ func Init(path string) (Config, Manifest, error) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return Config{}, Manifest{}, fmt.Errorf("create dir %s: %w", dir, err)
 		}
-	}
-	if _, err := os.Stat(cfg.StorePath); os.IsNotExist(err) {
-		file, err := os.OpenFile(cfg.StorePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-		if err != nil {
-			return Config{}, Manifest{}, fmt.Errorf("create memory store: %w", err)
-		}
-		if err := file.Close(); err != nil {
-			return Config{}, Manifest{}, fmt.Errorf("close memory store: %w", err)
-		}
-	} else if err != nil {
-		return Config{}, Manifest{}, fmt.Errorf("stat memory store: %w", err)
 	}
 	if err := writeDefaultTo(path, cfg); err != nil {
 		return Config{}, Manifest{}, err
@@ -82,6 +74,7 @@ func LoadManifest(root string) (Manifest, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return Manifest{}, fmt.Errorf("decode resource manifest: %w", err)
 	}
+	manifest.Resources = filterDeprecatedResources(manifest.Resources)
 	return withExists(manifest), nil
 }
 
@@ -139,9 +132,9 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "data root", Type: "directory", Path: cfg.Root, Managed: true},
 		{Name: "config file", Type: "config-file", Path: configPath, Managed: true},
 		{Name: "resource manifest", Type: "manifest-file", Path: ManifestPath(cfg.Root), Managed: true},
-		{Name: "memory source store", Type: "data-file", Path: cfg.StorePath, Managed: true},
 		{Name: "ingest state", Type: "data-file", Path: IngestStatePath(cfg.Root), Managed: true},
 		{Name: "zvec index", Type: "index-directory", Path: cfg.ZvecPath, Managed: true},
+		{Name: "store socket", Type: "socket", Path: filepath.Join(cfg.Root, "memoryd.sock"), Managed: true},
 		{Name: "git event spool", Type: "directory", Path: cfg.SpoolDir, Managed: true},
 		{Name: "global git hooks", Type: "directory", Path: gitHooksDir, Managed: true},
 		{Name: "global git post-commit hook", Type: "executable-file", Path: filepath.Join(gitHooksDir, "post-commit"), Managed: true},
@@ -150,6 +143,24 @@ func plannedResources(cfg Config, configPath string) []Resource {
 		{Name: "logs", Type: "directory", Path: filepath.Join(cfg.Root, "logs"), Managed: true},
 		{Name: "launchd plist", Type: "launchd-plist", Path: LaunchdPlistPath(), Managed: true},
 	}
+}
+
+func filterDeprecatedResources(resources []Resource) []Resource {
+	filtered := make([]Resource, 0, len(resources))
+	for _, resource := range resources {
+		if isDeprecatedResource(resource) {
+			continue
+		}
+		filtered = append(filtered, resource)
+	}
+	return filtered
+}
+
+func isDeprecatedResource(resource Resource) bool {
+	return resource.Managed &&
+		resource.Name == "memory source store" &&
+		resource.Type == "data-file" &&
+		filepath.Base(resource.Path) == "memories.jsonl"
 }
 
 func withExists(manifest Manifest) Manifest {
@@ -170,13 +181,20 @@ func writeDefaultTo(path string, cfg Config) error {
 	}
 	body := map[string]any{
 		"root":                 cfg.Root,
-		"store_path":           cfg.StorePath,
-		"index_backend":        cfg.IndexBackend,
 		"zvec_path":            cfg.ZvecPath,
 		"spool_dir":            cfg.SpoolDir,
 		"transcript_roots":     cfg.TranscriptRoots,
 		"summarizer_command":   cfg.SummarizerCommand,
 		"summarizer_timeout":   cfg.SummarizerTimeout.String(),
+		"embedder_provider":    cfg.EmbedderProvider,
+		"embedder_model":       cfg.EmbedderModel,
+		"embedder_url":         cfg.EmbedderURL,
+		"embedder_command":     cfg.EmbedderCommand,
+		"embedder_timeout":     cfg.EmbedderTimeout.String(),
+		"embedding_dim":        cfg.EmbeddingDim,
+		"search_fts_weight":    cfg.SearchFTSWeight,
+		"search_vector_weight": cfg.SearchVectorWeight,
+		"lock_timeout":         cfg.LockTimeout.String(),
 		"memory_context_limit": cfg.MemoryContextLimit,
 		"poll_interval":        cfg.PollInterval.String(),
 		"idle_after":           cfg.IdleAfter.String(),
@@ -189,7 +207,7 @@ func writeDefaultTo(path string, cfg Config) error {
 }
 
 func LaunchdPlistPath() string {
-	return filepath.Join(homeDir(), "Library", "LaunchAgents", "dev.agent-memoryd.plist")
+	return filepath.Join(homeDir(), "Library", "LaunchAgents", "dev.memoryd.plist")
 }
 
 func ManagedGitHooksPath(root string) string {
