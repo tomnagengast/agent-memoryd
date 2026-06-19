@@ -2,6 +2,11 @@
 
 All notable changes to `agent-memoryd` are tracked here.
 
+## v0.1.2 - 2026-06-19
+
+- Fixes Homebrew release version output to print the clean semver tag, such as `memoryd v0.1.2`.
+- Preserves commit and build-date metadata for source-built binaries.
+
 ## v0.1.1 - 2026-06-19
 
 - Adds Homebrew cask release packaging and CI release snapshot fixes.
