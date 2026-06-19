@@ -79,3 +79,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           HOMEBREW_TAP_GITHUB_TOKEN: unused
+          PWD: ${{ github.workspace }}
