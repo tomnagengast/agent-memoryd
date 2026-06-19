@@ -1,5 +1,9 @@
 [tools]
 go = "1.26.3"
+goreleaser = "latest"
+gh = "latest"
+direnv = "latest"
+worktrunk = "latest"
 
 [tasks.fmt]
 description = "Format Go source"
@@ -86,3 +90,32 @@ run = "go run github.com/zvec-ai/zvec-go/cmd/download-libs@v0.5.0 -version v0.5.
 [tasks.tidy]
 description = "Tidy Go modules"
 run = "go mod tidy"
+
+[tasks.release-check]
+description = "Run local checks for a tagged GoReleaser/Homebrew release"
+depends = ["zvec-libs", "test", "build"]
+run = "goreleaser check"
+
+[tasks.doctor]
+description = "Check repo toolchain and agent helper CLIs"
+run = '''
+missing=0
+for tool in mise direnv wt gh goreleaser; do
+  if command -v "${tool}" >/dev/null 2>&1; then
+    printf "%-12s %s\n" "${tool}" "$(command -v "${tool}")"
+  else
+    printf "%-12s missing\n" "${tool}"
+    missing=1
+  fi
+done
+
+if command -v memoryd >/dev/null 2>&1; then
+  printf "%-12s %s\n" "memoryd" "$(command -v memoryd)"
+elif [ -x ./memoryd ]; then
+  printf "%-12s ./memoryd\n" "memoryd"
+else
+  printf "%-12s missing; run 'mise run build' or 'mise run install-local'\n" "memoryd"
+fi
+
+exit "${missing}"
+'''

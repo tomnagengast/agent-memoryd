@@ -16,8 +16,10 @@ wheels/
 
 # Tool and editor state
 .archive/
+.direnv/
 .humanlayer/
 .venv
+.worktrees/
 lib/
 
 # Generated local data
