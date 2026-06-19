@@ -1,136 +1,38 @@
-name: Release
+name: release
 
 on:
   push:
     tags:
-      - "v*"
+      - v*.*.*
 
 permissions:
   contents: write
 
-env:
-  ZVEC_VERSION: v0.5.0
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  goreleaser:
+    name: goreleaser
+    runs-on: macos-26
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Download zvec native libraries
-        run: go run github.com/zvec-ai/zvec-go/cmd/download-libs@${ZVEC_VERSION} -version "${ZVEC_VERSION}" -dest ./lib
-
-      - name: Check formatting
-        run: test -z "$(gofmt -l .)"
-
-      - name: Run tests
-        run: go test ./...
-        env:
-          CGO_ENABLED: "1"
-          CGO_CFLAGS: -I${{ github.workspace }}/lib/include
-          CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
-
-  build:
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: darwin
-            goarch: arm64
-            runner: macos-26
-          - goos: linux
-            goarch: amd64
-            runner: ubuntu-latest
-          - goos: linux
-            goarch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
+          go-version: '1.26.3'
 
-      - name: Build release archive
-        run: ./scripts/build-release-artifact.sh
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
         env:
-          MEMORYD_VERSION: ${{ github.ref_name }}
-          MEMORYD_GOOS: ${{ matrix.goos }}
-          MEMORYD_GOARCH: ${{ matrix.goarch }}
-
-      - name: Upload release archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.tar.gz
-          if-no-files-found: error
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    env:
-      HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Download release archives
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: release-*
-          merge-multiple: true
-
-      - name: Generate checksums and Homebrew formula
-        shell: bash
-        run: |
-          set -euo pipefail
-          (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
-          ./scripts/render-homebrew-formula.sh "${GITHUB_REF_NAME}" dist/checksums.txt dist/memoryd.rb
-
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/checksums.txt dist/memoryd.rb --verify-tag --generate-notes
-
-      - name: Publish Homebrew tap formula
-        if: env.HOMEBREW_TAP_TOKEN != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          tap_repo="${HOMEBREW_TAP_REPOSITORY:-tomnagengast/homebrew-tap}"
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${tap_repo}.git" tap
-          mkdir -p tap/Formula
-          cp dist/memoryd.rb tap/Formula/memoryd.rb
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- Formula/memoryd.rb; then
-            echo "Homebrew formula is already current."
-            exit 0
-          fi
-          git add Formula/memoryd.rb
-          git commit -m "Update memoryd ${GITHUB_REF_NAME}"
-          git push origin HEAD
-
-      - name: Report skipped Homebrew tap publish
-        if: env.HOMEBREW_TAP_TOKEN == ''
-        run: echo "Skipped tap publish because HOMEBREW_TAP_TOKEN is not configured."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

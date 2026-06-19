@@ -7,24 +7,24 @@
 | Requirement        | Notes                                                                                                                              |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Go                 | Managed by `mise`; see `.mise.toml` for the pinned version.                                                                        |
-| macOS or Linux     | Release archives are built for macOS arm64 and Linux amd64/arm64.                                                                  |
+| macOS              | Homebrew and release archives are built for macOS arm64.                                                                           |
 | C toolchain        | Required because the build uses cgo to link the zvec native library.                                                               |
 | Git                | Optional, but required for git hook ingestion and commit source material.                                                          |
 | Summarizer command | Required for daemon-generated transcript and git memories. The default config uses `codex exec`.                                   |
 
-macOS Intel is not packaged until zvec publishes a `darwin_amd64` native library.
+macOS Intel is not packaged until zvec publishes a `darwin_amd64` native library. Linux remains supported when building locally, but the Homebrew release path currently follows the macOS arm64 cask used by the release workflow.
 
 ## Install With Homebrew
 
 Install from the tap:
 
 ```sh
-brew install tomnagengast/tap/memoryd
+brew install --cask tomnagengast/tap/memoryd-cli
 memoryd --version
 memoryd init
 ```
 
-The formula installs `memoryd` and the bundled zvec native library into the Homebrew prefix. Run `memoryd init` after installation to create the local data root, config, Git hooks, and the managed daemon service.
+The cask installs `memoryd` and stages the bundled zvec native library beside it. Run `memoryd init` after installation to create the local data root, config, Git hooks, and the managed daemon service.
 
 ## Build From Source
 
@@ -79,28 +79,26 @@ memoryd init
 
 ## Install From A GitHub Release
 
-Release assets include a prefix-style `bin/` and `lib/` tree. Choose a tag and install the matching asset:
+Release assets include `memoryd` and `libzvec_c_api.dylib` at the archive root. Choose a tag and install the matching asset:
 
 ```sh
 version="v0.1.0"
-os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-case "$(uname -m)" in
-  arm64|aarch64) arch="arm64" ;;
-  x86_64|amd64) arch="amd64" ;;
-  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
-esac
+asset_version="${version#v}"
+os="darwin"
+arch="arm64"
 
 curl -L \
   -o /tmp/agent-memoryd.tar.gz \
-  "https://github.com/tomnagengast/agent-memoryd/releases/download/${version}/agent-memoryd_${version}_${os}_${arch}.tar.gz"
+  "https://github.com/tomnagengast/agent-memoryd/releases/download/${version}/agent-memoryd_${asset_version}_${os}_${arch}.tar.gz"
 mkdir -p ~/.local/bin
-mkdir -p ~/.local/lib
-tar -xzf /tmp/agent-memoryd.tar.gz -C ~/.local
+tar -xzf /tmp/agent-memoryd.tar.gz -C /tmp memoryd libzvec_c_api.dylib
+install -m 755 /tmp/memoryd ~/.local/bin/memoryd
+install -m 644 /tmp/libzvec_c_api.dylib ~/.local/bin/libzvec_c_api.dylib
 memoryd --version
 memoryd init
 ```
 
-Each release also includes `checksums.txt` and the generated Homebrew formula for the tag.
+Each release also includes `checksums.txt`. The matching Homebrew cask is published to `tomnagengast/homebrew-tap` by GoReleaser when tap credentials are configured.
 
 ## Initialize
 

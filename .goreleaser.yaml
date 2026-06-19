@@ -1,0 +1,75 @@
+version: 2
+
+project_name: agent-memoryd
+
+builds:
+  - id: memoryd
+    main: ./cmd/agent-memoryd
+    binary: memoryd
+    env:
+      - CGO_ENABLED=1
+      - CGO_CFLAGS=-I{{ .Env.PWD }}/lib/include
+      - CGO_LDFLAGS=-L{{ .Env.PWD }}/lib/darwin_arm64 -lzvec_c_api -Wl,-rpath,@loader_path
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/tomnagengast/agent-memoryd/internal/version.Version={{ .Version }}
+      - -X github.com/tomnagengast/agent-memoryd/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/tomnagengast/agent-memoryd/internal/version.Date={{ .Date }}
+    hooks:
+      pre:
+        - cmd: go run github.com/zvec-ai/zvec-go/cmd/download-libs@v0.5.0 -version v0.5.0 -dest ./lib
+          output: true
+      post:
+        - cmd: ./scripts/clean-darwin-rpaths.sh "{{ .Path }}" "@loader_path"
+          output: true
+
+archives:
+  - id: memoryd
+    ids:
+      - memoryd
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
+    files:
+      - src: lib/darwin_arm64/libzvec_c_api.dylib
+        strip_parent: true
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  github:
+    owner: tomnagengast
+    name: agent-memoryd
+
+homebrew_casks:
+  - name: memoryd-cli
+    ids:
+      - memoryd
+    binaries:
+      - memoryd
+    repository:
+      owner: tomnagengast
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    commit_msg_template: "update memoryd to {{ .Tag }}"
+    homepage: "https://github.com/tomnagengast/agent-memoryd"
+    description: "Local memory daemon and MCP server for coding agents."
+    caveats: "Run `memoryd init` after installation to create config, Git hooks, and the managed daemon service."
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/memoryd"]
+          end

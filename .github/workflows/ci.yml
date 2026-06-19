@@ -1,4 +1,4 @@
-name: CI
+name: ci
 
 on:
   pull_request:
@@ -6,20 +6,27 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: test
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
+          go-version: '1.26.3'
 
-      - name: Download dependencies
+      - name: Download modules
         run: go mod download
 
       - name: Download zvec native libraries
@@ -42,11 +49,33 @@ jobs:
           CGO_CFLAGS: -I${{ github.workspace }}/lib/include
           CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
 
-      - name: Build release archive layout
-        run: ./scripts/build-release-artifact.sh
-        env:
-          MEMORYD_VERSION: ci
-          MEMORYD_DATE: "1970-01-01T00:00:00Z"
+  release-check:
+    name: release check
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Check Homebrew formula template syntax
-        run: ruby -c packaging/homebrew/memoryd.rb.tpl
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.3'
+
+      - name: Check GoReleaser config
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
+
+      - name: Build release snapshot
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HOMEBREW_TAP_GITHUB_TOKEN: unused
