@@ -16,6 +16,7 @@ import (
 
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
+	"github.com/tomnagengast/agent-memoryd/internal/cloexec"
 	"github.com/tomnagengast/agent-memoryd/internal/config"
 	"github.com/tomnagengast/agent-memoryd/internal/daemon"
 	"github.com/tomnagengast/agent-memoryd/internal/embedder"
@@ -585,6 +586,10 @@ func loadStore() (config.Config, *memory.Store, error) {
 	})
 	if err != nil {
 		return config.Config{}, nil, err
+	}
+	if err := cloexec.MarkOpenFiles(); err != nil {
+		store.Close()
+		return config.Config{}, nil, fmt.Errorf("mark inherited fds close-on-exec: %w", err)
 	}
 	return cfg, store, nil
 }
