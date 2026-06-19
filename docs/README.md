@@ -14,5 +14,7 @@ Start with [Install](./install.md) and [Getting started](./getting-started.md) i
 | [Daemon](./daemon.md)                   | Run summarizer-driven transcript and git-event ingestion.                                     |
 | [Git hooks](./git-hooks.md)             | Understand managed global hooks and git event enqueueing.                                     |
 | [zvec](./zvec.md)                       | Build and configure the zvec-backed retrieval index.                                          |
+| [Release](./release.md)                 | Cut tagged releases and publish the Homebrew cask.                                            |
+| [Troubleshooting](./troubleshooting.md) | Diagnose daemon, launchd, hook, embedder, and zvec setup issues.                              |
 | [Uninstall](./uninstall.md)             | Inspect and remove managed resources.                                                         |
 | [Contributing](./contributing.md)       | Run checks and work within the repository conventions.                                        |

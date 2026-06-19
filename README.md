@@ -2,6 +2,10 @@
 
 Local memory daemon for coding agents.
 
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#goals)
+[![CI](https://github.com/tomnagengast/agent-memoryd/actions/workflows/ci.yml/badge.svg)](https://github.com/tomnagengast/agent-memoryd/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 `agent-memoryd` is a small local service and MCP server that lets coding agents search, fetch, retrieve bounded context, add, and forget durable memories. The project is intended for fresh installs and public contribution, with an optional generic import path for existing JSONL, markdown, and text memories.
 
 ## Quick Start
@@ -109,6 +113,8 @@ Add and retrieve a memory from the CLI:
 - [Daemon](./docs/daemon.md)
 - [Git hooks](./docs/git-hooks.md)
 - [zvec](./docs/zvec.md)
+- [Release](./docs/release.md)
+- [Troubleshooting](./docs/troubleshooting.md)
 - [Uninstall](./docs/uninstall.md)
 - [Contributing](./docs/contributing.md)
 
@@ -189,3 +195,8 @@ Deletes a memory from the local store.
 Extracts durable memories from the current session. If `session` is provided, the tool summarizes that text. Otherwise it uses `transcript_path`, or the newest configured transcript if no path is provided.
 
 See [docs/mcp.md](./docs/mcp.md) for MCP configuration and schemas.
+
+## Related tools
+
+- [`scout`](https://github.com/tomnagengast/scout) maps docs and repos so agents load the right context.
+- [`agent-insights`](https://github.com/tomnagengast/agent-insights) turns local agent sessions into reports that show usage, friction, and instruction opportunities.
