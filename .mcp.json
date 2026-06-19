@@ -1,12 +1,15 @@
 {
   "mcpServers": {
-    "agent-memoryd": {
-      "type": "stdio",
-      "command": "agent-memoryd",
-      "args": [
-        "mcp"
-      ],
-      "env": {}
+        "agent-memoryd": {
+            "type": "stdio",
+            "command": "sh",
+            "args": [
+                "-lc",
+                "exec ~/.local/bin/memoryd mcp"
+            ],
+            "env": {
+                "MEMORYD_HOME": "~/.local/share/memoryd"
+            }
+        }
     }
-  }
 }

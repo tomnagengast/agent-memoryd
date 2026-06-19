@@ -19,5 +19,5 @@ timeout = 30
 statusMessage = "Reflecting on session"
 
 [mcp_servers.agent-memoryd]
-command = "agent-memoryd"
-args = ["mcp"]
+command = "sh"
+args = ["-lc", "exec ~/.local/bin/memoryd mcp"]
