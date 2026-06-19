@@ -15,10 +15,7 @@ var (
 )
 
 func String() string {
-	version := strings.TrimSpace(Version)
-	if version == "" {
-		version = "dev"
-	}
+	version := Value()
 	commit := strings.TrimSpace(Commit)
 	if commit == "" {
 		commit = vcsRevision()
@@ -34,6 +31,14 @@ func String() string {
 		return fmt.Sprintf("%s %s (%s)", CommandName, version, date)
 	}
 	return fmt.Sprintf("%s %s (%s, %s)", CommandName, version, commit, date)
+}
+
+func Value() string {
+	version := strings.TrimSpace(Version)
+	if version == "" {
+		return "dev"
+	}
+	return version
 }
 
 func vcsRevision() string {

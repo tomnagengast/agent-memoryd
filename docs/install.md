@@ -7,10 +7,24 @@
 | Requirement        | Notes                                                                                                                              |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Go                 | Managed by `mise`; see `.mise.toml` for the pinned version.                                                                        |
-| macOS or Linux     | Prebuilt native zvec libraries are available for macOS arm64 and Linux amd64/arm64.                                                |
+| macOS or Linux     | Release archives are built for macOS arm64 and Linux amd64/arm64.                                                                  |
 | C toolchain        | Required because the build uses cgo to link the zvec native library.                                                               |
 | Git                | Optional, but required for git hook ingestion and commit source material.                                                          |
 | Summarizer command | Required for daemon-generated transcript and git memories. The default config uses `codex exec`.                                   |
+
+macOS Intel is not packaged until zvec publishes a `darwin_amd64` native library.
+
+## Install With Homebrew
+
+Install from the tap:
+
+```sh
+brew install tomnagengast/tap/memoryd
+memoryd --version
+memoryd init
+```
+
+The formula installs `memoryd` and the bundled zvec native library into the Homebrew prefix. Run `memoryd init` after installation to create the local data root, config, Git hooks, and the managed daemon service.
 
 ## Build From Source
 
@@ -65,7 +79,7 @@ memoryd init
 
 ## Install From A GitHub Release
 
-Release assets include the binary and the native library. Choose a tag and install the matching asset:
+Release assets include a prefix-style `bin/` and `lib/` tree. Choose a tag and install the matching asset:
 
 ```sh
 version="v0.1.0"
@@ -79,14 +93,14 @@ esac
 curl -L \
   -o /tmp/agent-memoryd.tar.gz \
   "https://github.com/tomnagengast/agent-memoryd/releases/download/${version}/agent-memoryd_${version}_${os}_${arch}.tar.gz"
-tar -xzf /tmp/agent-memoryd.tar.gz -C /tmp memoryd
 mkdir -p ~/.local/bin
-install -m 755 /tmp/memoryd ~/.local/bin/memoryd
+mkdir -p ~/.local/lib
+tar -xzf /tmp/agent-memoryd.tar.gz -C ~/.local
 memoryd --version
 memoryd init
 ```
 
-Each release also includes `checksums.txt`.
+Each release also includes `checksums.txt` and the generated Homebrew formula for the tag.
 
 ## Initialize
 

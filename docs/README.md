@@ -6,7 +6,7 @@ Start with [Install](./install.md) and [Getting started](./getting-started.md) i
 
 | Page                                    | Purpose                                                                                       |
 | --------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [Install](./install.md)                 | Build the binary, initialize the data root, and optionally build with zvec.                   |
+| [Install](./install.md)                 | Install with Homebrew or release assets, build from source, and initialize the data root.     |
 | [Getting started](./getting-started.md) | Try the CLI, run MCP, and run the daemon.                                                     |
 | [Config](./config.md)                   | Understand `config.json`, `MEMORYD_HOME`, summarizer settings, and persisted resources. |
 | [Architecture](./architecture.md)       | See how the store, index, daemon, and MCP server fit together.                                |

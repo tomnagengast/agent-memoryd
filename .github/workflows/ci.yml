@@ -41,3 +41,12 @@ jobs:
           CGO_ENABLED: "1"
           CGO_CFLAGS: -I${{ github.workspace }}/lib/include
           CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
+
+      - name: Build release archive layout
+        run: ./scripts/build-release-artifact.sh
+        env:
+          MEMORYD_VERSION: ci
+          MEMORYD_DATE: "1970-01-01T00:00:00Z"
+
+      - name: Check Homebrew formula template syntax
+        run: ruby -c packaging/homebrew/memoryd.rb.tpl

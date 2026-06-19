@@ -6,6 +6,16 @@ Local memory daemon for coding agents.
 
 ## Quick Start
 
+Install the latest release with Homebrew on supported platforms:
+
+```sh
+brew install tomnagengast/tap/memoryd
+memoryd init
+memoryd status
+```
+
+Or build from source:
+
 ```sh
 mise install
 mise run zvec-libs
@@ -130,6 +140,8 @@ memoryd init
 ```
 
 `mise run install-local` rebuilds the binary with an rpath pointing at `~/.local/lib/memoryd/` and copies the native library there, so the installed binary works independently of the repository working tree.
+
+Release archives use the same prefix-relative layout as Homebrew: `bin/memoryd` plus `lib/libzvec_c_api.*`. Tag pushes run `.github/workflows/release.yml`, publish GitHub release archives for the zvec-supported platforms, render `memoryd.rb`, and optionally update the configured Homebrew tap.
 
 ## Architecture
 

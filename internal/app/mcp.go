@@ -17,6 +17,7 @@ import (
 	"github.com/tomnagengast/agent-memoryd/internal/ingest"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
 	"github.com/tomnagengast/agent-memoryd/internal/summarizer"
+	"github.com/tomnagengast/agent-memoryd/internal/version"
 )
 
 type searchInput struct {
@@ -112,7 +113,7 @@ func runMCP(ctx context.Context, cfg config.Config, store memory.API) error {
 func newMCPServer(cfg config.Config, store memory.API) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "agent-memoryd",
-		Version: "0.1.0",
+		Version: version.Value(),
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{

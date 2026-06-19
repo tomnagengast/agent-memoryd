@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tomnagengast/agent-memoryd/internal/config"
 	"github.com/tomnagengast/agent-memoryd/internal/memory"
+	"github.com/tomnagengast/agent-memoryd/internal/version"
 )
 
 func TestMCPStatusToolRegisteredAndReturnsStoreStatus(t *testing.T) {
@@ -19,6 +20,14 @@ func TestMCPStatusToolRegisteredAndReturnsStoreStatus(t *testing.T) {
 
 	session, cleanup := connectTestMCP(t, ctx, newMCPServer(config.Config{}, store))
 	defer cleanup()
+
+	initResult := session.InitializeResult()
+	if initResult == nil {
+		t.Fatal("initialize result is nil")
+	}
+	if got := initResult.ServerInfo.Version; got != version.Value() {
+		t.Fatalf("server version = %q, want %q", got, version.Value())
+	}
 
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
