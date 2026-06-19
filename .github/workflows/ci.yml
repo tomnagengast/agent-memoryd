@@ -9,10 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      CGO_ENABLED: "1"
-      CGO_CFLAGS: -I${{ github.workspace }}/lib/include
-      CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,6 +30,14 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+        env:
+          CGO_ENABLED: "1"
+          CGO_CFLAGS: -I${{ github.workspace }}/lib/include
+          CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
 
       - name: Build
         run: go build -o ./memoryd ./cmd/agent-memoryd
+        env:
+          CGO_ENABLED: "1"
+          CGO_CFLAGS: -I${{ github.workspace }}/lib/include
+          CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
