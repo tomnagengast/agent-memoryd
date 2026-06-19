@@ -34,8 +34,8 @@ The GoReleaser build uses cgo, downloads the macOS arm64 zvec library, bundles `
 Update `CHANGELOG.md`, merge the release commit to `main`, then create and push the next semver tag:
 
 ```sh
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "v0.1.1"
+git push origin v0.1.1
 ```
 
 The `release` workflow only publishes from tag refs matching `v*.*.*`.
