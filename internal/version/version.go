@@ -17,7 +17,7 @@ var (
 func String() string {
 	version := Value()
 	commit := strings.TrimSpace(Commit)
-	if commit == "" {
+	if commit == "" && version == "dev" {
 		commit = vcsRevision()
 	}
 	date := strings.TrimSpace(Date)

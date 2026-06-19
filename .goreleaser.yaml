@@ -18,9 +18,7 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/tomnagengast/agent-memoryd/internal/version.Version={{ .Version }}
-      - -X github.com/tomnagengast/agent-memoryd/internal/version.Commit={{ .ShortCommit }}
-      - -X github.com/tomnagengast/agent-memoryd/internal/version.Date={{ .Date }}
+      - -X github.com/tomnagengast/agent-memoryd/internal/version.Version=v{{ .Version }}
     hooks:
       pre:
         - cmd: go run github.com/zvec-ai/zvec-go/cmd/download-libs@v0.5.0 -version v0.5.0 -dest ./lib
