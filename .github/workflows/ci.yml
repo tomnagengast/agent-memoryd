@@ -9,6 +9,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: -I${{ github.workspace }}/lib/include
+      CGO_LDFLAGS: -L${{ github.workspace }}/lib/linux_amd64 -lzvec_c_api -Wl,-rpath,${{ github.workspace }}/lib/linux_amd64
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -21,6 +25,9 @@ jobs:
 
       - name: Download dependencies
         run: go mod download
+
+      - name: Download zvec native libraries
+        run: go run github.com/zvec-ai/zvec-go/cmd/download-libs@v0.5.0 -version v0.5.0 -dest ./lib
 
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
