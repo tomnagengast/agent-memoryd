@@ -203,6 +203,21 @@ func (s *Server) dispatch(ctx context.Context, req Request) (any, *RPCError) {
 		}
 		return results, nil
 
+	case "search_detailed":
+		var p memory.SearchRequest
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, &RPCError{Code: "internal", Msg: "decode search_detailed params: " + err.Error()}
+		}
+		searcher, ok := s.api.(memory.DetailedSearcher)
+		if !ok {
+			return nil, &RPCError{Code: "internal", Msg: "search diagnostics unavailable"}
+		}
+		response, err := searcher.SearchDetailed(ctx, p)
+		if err != nil {
+			return nil, errToRPC(err)
+		}
+		return response, nil
+
 	case "forget":
 		var p struct {
 			ID string `json:"id"`
@@ -325,6 +340,15 @@ func (c *Client) Search(ctx context.Context, req memory.SearchRequest) ([]memory
 	return results, json.Unmarshal(raw, &results)
 }
 
+func (c *Client) SearchDetailed(ctx context.Context, req memory.SearchRequest) (memory.SearchResponse, error) {
+	raw, err := c.call(ctx, "search_detailed", req)
+	if err != nil {
+		return memory.SearchResponse{}, err
+	}
+	var response memory.SearchResponse
+	return response, json.Unmarshal(raw, &response)
+}
+
 func (c *Client) Forget(ctx context.Context, id string) error {
 	_, err := c.call(ctx, "forget", struct {
 		ID string `json:"id"`
@@ -368,3 +392,6 @@ func (c *Client) Optimize(ctx context.Context) error {
 
 // compile-time assertion: *Client must satisfy memory.API.
 var _ memory.API = (*Client)(nil)
+
+// compile-time assertion: *Client must satisfy memory.DetailedSearcher.
+var _ memory.DetailedSearcher = (*Client)(nil)

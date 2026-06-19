@@ -145,6 +145,88 @@ func TestReflectSessionTextStoresSummarizedMemory(t *testing.T) {
 	}
 }
 
+func TestBuildMemoryContextExpandsSearchResultsWithinBudget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newFakeMemoryAPI()
+	store.records["second"] = memory.Record{
+		ID:      "second",
+		Kind:    "fact",
+		Project: "agent-memoryd",
+		Source:  "docs/mcp.md",
+		Summary: "Second memory",
+		Body:    "second memory body is intentionally long enough to truncate",
+	}
+	store.records["first"] = memory.Record{
+		ID:      "first",
+		Kind:    "instruction",
+		Project: "agent-memoryd",
+		Source:  "README.md",
+		Summary: "First memory",
+		Body:    "short body",
+	}
+	store.searchResults = []memory.SearchResult{
+		{ID: "second", Score: 0.9},
+		{ID: "first", Score: 0.8},
+	}
+
+	out, err := buildMemoryContext(ctx, store, contextInput{
+		Query:    "memory context",
+		Project:  "agent-memoryd",
+		Kind:     "fact",
+		Limit:    2,
+		MaxChars: 20,
+	})
+	if err != nil {
+		t.Fatalf("build memory context: %v", err)
+	}
+	if store.lastSearch != (memory.SearchRequest{Query: "memory context", Project: "agent-memoryd", Kind: "fact", Limit: 2}) {
+		t.Fatalf("search request = %#v", store.lastSearch)
+	}
+	if got, want := strings.Join(store.getCalls, ","), "second,first"; got != want {
+		t.Fatalf("get calls = %q, want %q", got, want)
+	}
+	if len(out.Results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(out.Results))
+	}
+	if out.MaxChars != 20 || !out.Truncated {
+		t.Fatalf("output budget = %d truncated = %v, want 20/true", out.MaxChars, out.Truncated)
+	}
+	if out.Results[0].ID != "second" || out.Results[0].Score != 0.9 || !out.Results[0].BodyTruncated {
+		t.Fatalf("first context result = %#v", out.Results[0])
+	}
+	if out.Results[1].ID != "first" || out.Results[1].Body != "short body" || out.Results[1].BodyTruncated {
+		t.Fatalf("second context result = %#v", out.Results[1])
+	}
+	if total := runeCount(out.Results[0].Body) + runeCount(out.Results[1].Body); total > 20 {
+		t.Fatalf("body characters = %d, want <= 20", total)
+	}
+}
+
+func TestBuildMemoryContextSkipsMissingSearchResults(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newFakeMemoryAPI()
+	store.records["present"] = memory.Record{
+		ID:      "present",
+		Kind:    "fact",
+		Summary: "Present memory",
+		Body:    "body",
+	}
+	store.searchResults = []memory.SearchResult{
+		{ID: "missing", Score: 1.0},
+		{ID: "present", Score: 0.5},
+	}
+
+	out, err := buildMemoryContext(ctx, store, contextInput{Query: "memory", Limit: 2})
+	if err != nil {
+		t.Fatalf("build memory context: %v", err)
+	}
+	if len(out.Results) != 1 || out.Results[0].ID != "present" {
+		t.Fatalf("results = %#v, want only present memory", out.Results)
+	}
+}
+
 func TestLatestTranscriptReturnsNewestJSONL(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -211,6 +293,41 @@ func TestDialOrOpenUsesDaemonSocket(t *testing.T) {
 	}
 	if got.Body != "hello from rpc" {
 		t.Fatalf("got body %q, want %q", got.Body, "hello from rpc")
+	}
+}
+
+func TestRunSearchDiagnosticsUsesDetailedSearch(t *testing.T) {
+	root := shortSocketDir(t)
+	t.Setenv("MEMORYD_HOME", root)
+	cfg := config.Config{Root: root}
+	api := newFakeMemoryAPI()
+	api.searchResults = []memory.SearchResult{{
+		ID:      "search-001",
+		Kind:    "fact",
+		Summary: "diagnostic search result",
+		Score:   1,
+	}}
+	stop := startFakeStoreRPC(t, cfg, api)
+	defer stop()
+
+	out, err := captureStdout(func() error {
+		return Run([]string{"search", "--diagnostics", "--limit", "3", "--project", "agent-memoryd", "diagnostics"})
+	})
+	if err != nil {
+		t.Fatalf("search diagnostics: %v", err)
+	}
+	var response memory.SearchResponse
+	if err := json.Unmarshal([]byte(out), &response); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, out)
+	}
+	if len(response.Results) != 1 || response.Results[0].ID != "search-001" {
+		t.Fatalf("results = %+v, want search-001", response.Results)
+	}
+	if !response.Diagnostics.EmbedderUsed || response.Diagnostics.FTSHits != 1 || response.Diagnostics.VectorHits != 1 || response.Diagnostics.QueryEmbeddingDimension != 768 {
+		t.Fatalf("diagnostics = %+v, want detailed search diagnostics", response.Diagnostics)
+	}
+	if api.lastSearch.Query != "diagnostics" || api.lastSearch.Project != "agent-memoryd" || api.lastSearch.Limit != 3 {
+		t.Fatalf("lastSearch = %+v, want CLI request", api.lastSearch)
 	}
 }
 
@@ -332,7 +449,10 @@ func captureStdout(fn func() error) (string, error) {
 }
 
 type fakeMemoryAPI struct {
-	records map[string]memory.Record
+	records       map[string]memory.Record
+	searchResults []memory.SearchResult
+	lastSearch    memory.SearchRequest
+	getCalls      []string
 }
 
 func newFakeMemoryAPI() *fakeMemoryAPI {
@@ -349,6 +469,7 @@ func (f *fakeMemoryAPI) Add(_ context.Context, req memory.AddRequest) (memory.Re
 }
 
 func (f *fakeMemoryAPI) Get(_ context.Context, id string) (memory.Record, error) {
+	f.getCalls = append(f.getCalls, id)
 	record, ok := f.records[id]
 	if !ok {
 		return memory.Record{}, memory.ErrNotFound
@@ -356,8 +477,32 @@ func (f *fakeMemoryAPI) Get(_ context.Context, id string) (memory.Record, error)
 	return record, nil
 }
 
-func (f *fakeMemoryAPI) Search(_ context.Context, _ memory.SearchRequest) ([]memory.SearchResult, error) {
-	return nil, nil
+func (f *fakeMemoryAPI) Search(_ context.Context, req memory.SearchRequest) ([]memory.SearchResult, error) {
+	f.lastSearch = req
+	if f.searchResults != nil {
+		return f.searchResults, nil
+	}
+	records, err := f.List(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return memory.SearchLexical(records, req)
+}
+
+func (f *fakeMemoryAPI) SearchDetailed(ctx context.Context, req memory.SearchRequest) (memory.SearchResponse, error) {
+	results, err := f.Search(ctx, req)
+	if err != nil {
+		return memory.SearchResponse{}, err
+	}
+	return memory.SearchResponse{
+		Results: results,
+		Diagnostics: memory.SearchDiagnostics{
+			EmbedderUsed:            true,
+			FTSHits:                 len(results),
+			VectorHits:              1,
+			QueryEmbeddingDimension: 768,
+		},
+	}, nil
 }
 
 func (f *fakeMemoryAPI) Forget(_ context.Context, id string) error {

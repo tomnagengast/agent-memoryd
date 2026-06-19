@@ -664,3 +664,83 @@ func TestSearchFTSLegWithoutEmbedder(t *testing.T) {
 		t.Fatalf("expected wine record in results; got: %+v", results)
 	}
 }
+
+func TestSearchDetailedReportsFTSOnlyWithoutEmbedder(t *testing.T) {
+	t.Parallel()
+	store := testStore(t) // uses embedder.Disabled
+	ctx := context.Background()
+
+	_, err := store.Add(ctx, memory.AddRequest{
+		Summary: "wine club tier pricing",
+		Body:    "bajka winery tier one two three pricing",
+	})
+	if err != nil {
+		t.Fatalf("add wine: %v", err)
+	}
+
+	response, err := store.SearchDetailed(ctx, memory.SearchRequest{Query: "wine", Limit: 5})
+	if err != nil {
+		t.Fatalf("search detailed: %v", err)
+	}
+	if response.Diagnostics.EmbedderUsed {
+		t.Fatalf("EmbedderUsed = true, want false")
+	}
+	if response.Diagnostics.FTSHits == 0 {
+		t.Fatalf("FTSHits = 0, want at least one; response=%+v", response)
+	}
+	if response.Diagnostics.VectorHits != 0 {
+		t.Fatalf("VectorHits = %d, want 0", response.Diagnostics.VectorHits)
+	}
+}
+
+func TestSearchDetailedReportsVectorLegWithEmbedder(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("CGO_ENABLED") == "0" {
+		t.Skip("skipping: cgo disabled")
+	}
+	dir := t.TempDir()
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     filepath.Join(dir, "zvec"),
+		EmbeddingDim: 768,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0.5,
+		VectorWeight: 0.5,
+		Embedder:     keywordEmbedder{dim: 768},
+	})
+	if err != nil {
+		t.Skipf("skipping: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+
+	_, err = store.Add(ctx, memory.AddRequest{
+		ID:      "diagnostics:arborist",
+		Summary: "Tree doctor canopy inspection",
+		Body:    "An arborist assessed a street tree with drought stress.",
+	})
+	if err != nil {
+		t.Fatalf("add arborist: %v", err)
+	}
+	_, err = store.Add(ctx, memory.AddRequest{
+		ID:      "diagnostics:fermentation",
+		Summary: "Fermentation vessel sanitation",
+		Body:    "Clean the wine tank before pitching yeast.",
+	})
+	if err != nil {
+		t.Fatalf("add fermentation: %v", err)
+	}
+
+	response, err := store.SearchDetailed(ctx, memory.SearchRequest{Query: "tree doctor", Limit: 2})
+	if err != nil {
+		t.Fatalf("search detailed: %v", err)
+	}
+	if !response.Diagnostics.EmbedderUsed {
+		t.Fatalf("EmbedderUsed = false, want true; diagnostics=%+v", response.Diagnostics)
+	}
+	if response.Diagnostics.QueryEmbeddingDimension != 768 {
+		t.Fatalf("QueryEmbeddingDimension = %d, want 768", response.Diagnostics.QueryEmbeddingDimension)
+	}
+	if response.Diagnostics.VectorHits == 0 {
+		t.Fatalf("VectorHits = 0, want vector leg participation; response=%+v", response)
+	}
+}

@@ -74,6 +74,18 @@ type SearchResult struct {
 	Score   float64 `json:"score"`
 }
 
+type SearchResponse struct {
+	Results     []SearchResult    `json:"results"`
+	Diagnostics SearchDiagnostics `json:"diagnostics"`
+}
+
+type SearchDiagnostics struct {
+	EmbedderUsed            bool `json:"embedder_used"`
+	FTSHits                 int  `json:"fts_hits"`
+	VectorHits              int  `json:"vector_hits"`
+	QueryEmbeddingDimension int  `json:"query_embedding_dimension,omitempty"`
+}
+
 type OpenConfig struct {
 	ZvecPath     string
 	EmbeddingDim int
@@ -228,8 +240,16 @@ func (s *Store) Forget(ctx context.Context, id string) error {
 }
 
 func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, error) {
-	if err := ctx.Err(); err != nil {
+	response, err := s.SearchDetailed(ctx, req)
+	if err != nil {
 		return nil, err
+	}
+	return response.Results, nil
+}
+
+func (s *Store) SearchDetailed(ctx context.Context, req SearchRequest) (SearchResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return SearchResponse{}, err
 	}
 	limit := req.Limit
 	if limit <= 0 {
@@ -243,6 +263,12 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 
 	// Embed OUTSIDE the lock: subprocess call should not hold s.mu.
 	queryVec, embedErr := s.embedder.Embed(ctx, req.Query)
+	diagnostics := SearchDiagnostics{
+		EmbedderUsed: embedErr == nil && len(queryVec) == s.dim,
+	}
+	if embedErr == nil && len(queryVec) > 0 {
+		diagnostics.QueryEmbeddingDimension = len(queryVec)
+	}
 
 	s.mu.Lock()
 	locked := true
@@ -256,38 +282,39 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 	ftsQuery := zvec.NewSearchQuery()
 	defer ftsQuery.Destroy()
 	if err := ftsQuery.SetFieldName("summary"); err != nil {
-		return nil, fmt.Errorf("set fts field name: %w", err)
+		return SearchResponse{}, fmt.Errorf("set fts field name: %w", err)
 	}
 	fts := zvec.NewFTS()
 	if err := fts.SetMatchString(req.Query); err != nil {
 		fts.Destroy()
-		return nil, fmt.Errorf("set fts match string: %w", err)
+		return SearchResponse{}, fmt.Errorf("set fts match string: %w", err)
 	}
 	if err := ftsQuery.SetFTS(fts); err != nil {
 		fts.Destroy()
-		return nil, fmt.Errorf("set fts query: %w", err)
+		return SearchResponse{}, fmt.Errorf("set fts query: %w", err)
 	}
 	fts.Destroy()
 	if err := ftsQuery.SetTopK(limit); err != nil {
-		return nil, err
+		return SearchResponse{}, err
 	}
 	if filter != "" {
 		if err := ftsQuery.SetFilter(filter); err != nil {
-			return nil, err
+			return SearchResponse{}, err
 		}
 	}
 	if err := ftsQuery.SetOutputFields([]string{"kind", "project", "source", "summary"}); err != nil {
-		return nil, err
+		return SearchResponse{}, err
 	}
 	ftsDocs, err := s.coll.Query(ftsQuery)
 	if err != nil {
-		return nil, fmt.Errorf("fts query: %w", err)
+		return SearchResponse{}, fmt.Errorf("fts query: %w", err)
 	}
 	defer zvec.FreeDocs(ftsDocs)
 	ftsResults, err := s.docsToLiveResultsLocked(ftsDocs)
 	if err != nil {
-		return nil, err
+		return SearchResponse{}, err
 	}
+	diagnostics.FTSHits = len(ftsResults)
 
 	// Vector leg - skip if embedder disabled or fails
 	var vecResults []SearchResult
@@ -321,12 +348,16 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 			vecResults = bruteResults
 		}
 	}
+	diagnostics.VectorHits = len(vecResults)
 
 	// Blend results
 	if len(vecResults) == 0 {
-		return ftsResults, nil
+		return SearchResponse{Results: ftsResults, Diagnostics: diagnostics}, nil
 	}
-	return blend(ftsResults, vecResults, s.weights), nil
+	return SearchResponse{
+		Results:     blend(ftsResults, vecResults, s.weights, limit),
+		Diagnostics: diagnostics,
+	}, nil
 }
 
 func (s *Store) searchFilteredByEmbedding(ctx context.Context, req SearchRequest, queryVec []float32, limit int) ([]SearchResult, error) {

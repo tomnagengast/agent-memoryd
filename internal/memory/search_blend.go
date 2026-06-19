@@ -49,7 +49,7 @@ func normalizeDistance(scores []float64) []float64 {
 	return out
 }
 
-func blend(fts, vec []SearchResult, w BlendWeights) []SearchResult {
+func blend(fts, vec []SearchResult, w BlendWeights, limit int) []SearchResult {
 	byID := make(map[string]*scoredResult)
 	ftsScores := make([]float64, len(fts))
 	for i, r := range fts {
@@ -85,6 +85,9 @@ func blend(fts, vec []SearchResult, w BlendWeights) []SearchResult {
 		})
 	}
 	sortByScoreDesc(results)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
 	return results
 }
 

@@ -252,6 +252,7 @@ func newAddCommand() *cobra.Command {
 
 func newSearchCommand() *cobra.Command {
 	var req memory.SearchRequest
+	var diagnostics bool
 	cmd := &cobra.Command{
 		Use:   "search [flags] <query>",
 		Short: "Search memory summaries.",
@@ -263,6 +264,13 @@ func newSearchCommand() *cobra.Command {
 			}
 			defer store.Close()
 			req.Query = args[0]
+			if diagnostics {
+				response, err := searchMemoryDetailed(cmd.Context(), store, req)
+				if err != nil {
+					return err
+				}
+				return printJSON(response)
+			}
 			results, err := store.Search(cmd.Context(), req)
 			if err != nil {
 				return err
@@ -273,6 +281,7 @@ func newSearchCommand() *cobra.Command {
 	cmd.Flags().StringVar(&req.Kind, "kind", "", "memory kind")
 	cmd.Flags().StringVar(&req.Project, "project", "", "project scope")
 	cmd.Flags().IntVar(&req.Limit, "limit", 5, "maximum result count")
+	cmd.Flags().BoolVar(&diagnostics, "diagnostics", false, "include search execution diagnostics")
 	return cmd
 }
 
@@ -1073,6 +1082,14 @@ func runScanOnce(ctx context.Context, cfg config.Config, store memory.API) error
 	return printJSON(map[string]any{"ok": true})
 }
 
+func searchMemoryDetailed(ctx context.Context, store memory.API, req memory.SearchRequest) (memory.SearchResponse, error) {
+	searcher, ok := store.(memory.DetailedSearcher)
+	if !ok {
+		return memory.SearchResponse{}, fmt.Errorf("search diagnostics unavailable")
+	}
+	return searcher.SearchDetailed(ctx, req)
+}
+
 func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -1112,6 +1129,8 @@ var commandHelp = []helpItem{
 }
 
 var mcpToolHelp = []helpItem{
+	{Name: "status", Summary: "show compact store and embedder health"},
+	{Name: "context", Summary: "search and expand top memories into bounded context"},
 	{Name: "search", Summary: "search local memory summaries"},
 	{Name: "get", Summary: "fetch one full memory by id"},
 	{Name: "add", Summary: "create or update a durable memory"},

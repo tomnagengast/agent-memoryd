@@ -10,7 +10,7 @@ On first open, if a legacy `memories.jsonl` file is present in the same root, it
 
 The daemon ingests two local input streams: idle transcript JSONL files and git event files. These producers pass source material plus existing memory summaries to the configured summarizer, then store the distilled memories returned by that agent with source references for progressive disclosure.
 
-The MCP server exposes `search`, `get`, `add`, `forget`, and `reflect` over stdio. The CLI commands use the same store interface as the MCP tools.
+The MCP server exposes `status`, `context`, `search`, `get`, `add`, `forget`, and `reflect` over stdio. The CLI commands use the same store interface as the MCP tools.
 
 ## Single-Owner + IPC Concurrency Model
 
@@ -22,7 +22,7 @@ This design means write safety for simultaneous writers comes from routing throu
 
 ## Retrieval Flow
 
-Agents should call `search` first. Search returns summaries and ids, which keeps most turns compact. The agent should call `get` only when a full memory is needed.
+Agents can call `context` to search and expand the top memory hits into bounded body excerpts in one step. For manual progressive disclosure, agents can call `search` first; search returns summaries and ids, which keeps most turns compact. The agent should call `get` only when a full memory is needed.
 
 Search is hybrid: it runs a full-text search (FTS) leg using zvec's `standard` tokenizer and a vector search leg using the configured embedder, then blends the two ranked lists in Go using configurable weights (`search_fts_weight`, `search_vector_weight`). When no embedder is configured or the embedder fails, only the FTS leg runs. The first-class embedder provider is Ollama via `/api/embed`; `embedder_command` remains as an escape hatch.
 

@@ -217,9 +217,7 @@ func parseTranscript(path string, info fs.FileInfo) (Transcript, error) {
 			continue
 		}
 		if cwd == "" {
-			if value, ok := obj["cwd"].(string); ok {
-				cwd = value
-			}
+			cwd = transcriptCWD(obj)
 		}
 		role, text := messageText(obj)
 		switch role {
@@ -244,9 +242,9 @@ func parseTranscript(path string, info fs.FileInfo) (Transcript, error) {
 	if firstUser == "" && lastUser == "" && assistantTurns == 0 && toolCalls == 0 {
 		return Transcript{}, nil
 	}
-	project := filepath.Base(cwd)
-	if project == "." || project == "/" || project == "" {
-		project = filepath.Base(filepath.Dir(path))
+	project := projectFromCWD(cwd)
+	if project == "" {
+		project = transcriptPathProjectFallback(path)
 	}
 	return Transcript{
 		ID:             "session:" + fileID(path, info),
@@ -489,8 +487,8 @@ func parseOpenCodeExport(path string, data []byte, fallbackModified time.Time) (
 	if modified.IsZero() {
 		modified = time.Now().UTC()
 	}
-	project := filepath.Base(cwd)
-	if project == "." || project == "/" || project == "" {
+	project := projectFromCWD(cwd)
+	if project == "" {
 		project = "opencode"
 	}
 	return Transcript{
@@ -529,4 +527,45 @@ func unixMillis(value int64) time.Time {
 		return time.UnixMilli(value)
 	}
 	return time.Unix(value, 0)
+}
+
+func transcriptCWD(obj map[string]any) string {
+	if value, ok := obj["cwd"].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	payload, ok := obj["payload"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if value, ok := payload["cwd"].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func projectFromCWD(cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return ""
+	}
+	project := filepath.Base(cwd)
+	if project == "." || project == string(filepath.Separator) || project == "" {
+		return ""
+	}
+	return project
+}
+
+func transcriptPathProjectFallback(path string) string {
+	if isCodexSessionPath(path) {
+		return "codex"
+	}
+	project := filepath.Base(filepath.Dir(path))
+	if project == "." || project == string(filepath.Separator) || project == "" {
+		return "transcript"
+	}
+	return project
+}
+
+func isCodexSessionPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(filepath.Clean(path)), "/.codex/sessions/")
 }

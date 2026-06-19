@@ -20,5 +20,14 @@ type API interface {
 	Close() error
 }
 
+// DetailedSearcher is implemented by stores that can report how a search was
+// executed without changing the legacy Search result shape.
+type DetailedSearcher interface {
+	SearchDetailed(ctx context.Context, req SearchRequest) (SearchResponse, error)
+}
+
 // compile-time assertion: *Store must satisfy API.
 var _ API = (*Store)(nil)
+
+// compile-time assertion: *Store must satisfy DetailedSearcher.
+var _ DetailedSearcher = (*Store)(nil)

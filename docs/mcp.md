@@ -18,6 +18,71 @@ The MCP server connects to the daemon's Unix socket at `$MEMORYD_HOME/memoryd.so
 
 ## Tools
 
+### status
+
+Return compact store and embedder health without the CLI-only config, service, hook, or resource details.
+
+Input:
+
+```json
+{}
+```
+
+Output:
+
+```json
+{
+  "path": "/Users/you/.local/share/memoryd/zvec",
+  "backend": "zvec",
+  "memory_count": 42,
+  "pending_embedding": 0,
+  "embedder": {
+    "configured": true,
+    "ok": true,
+    "dimension": 768
+  }
+}
+```
+
+### context
+
+Search local memories and expand the top hits into concise context. Use this when an agent needs the likely-relevant memory bodies without manually calling `search` and then `get` for each result.
+
+Input:
+
+```json
+{
+  "query": "preferred test command",
+  "project": "optional-project",
+  "kind": "optional-kind",
+  "limit": 5,
+  "max_chars": 6000
+}
+```
+
+`limit` defaults to 5 and is capped at 20. `max_chars` is the total body-character budget across expanded memories; it defaults to 6000 and is capped at 20000.
+
+Output:
+
+```json
+{
+  "max_chars": 6000,
+  "truncated": false,
+  "results": [
+    {
+      "id": "memory-id",
+      "kind": "fact",
+      "project": "optional-project",
+      "source": "optional-source",
+      "summary": "short summary",
+      "body": "full memory body or a bounded excerpt",
+      "body_truncated": false,
+      "score": 1.25
+    }
+  ]
+}
+```
+
 ### search
 
 Search local memory summaries.
@@ -29,7 +94,8 @@ Input:
   "query": "preferred test command",
   "project": "optional-project",
   "kind": "optional-kind",
-  "limit": 5
+  "limit": 5,
+  "diagnostics": false
 }
 ```
 
@@ -47,6 +113,20 @@ Output:
       "score": 1.25
     }
   ]
+}
+```
+
+Set `diagnostics` to `true` to include search execution metadata:
+
+```json
+{
+  "results": [],
+  "diagnostics": {
+    "embedder_used": true,
+    "fts_hits": 3,
+    "vector_hits": 5,
+    "query_embedding_dimension": 768
+  }
 }
 ```
 
@@ -176,4 +256,4 @@ Output:
 
 ## Usage Pattern
 
-Agents should treat memory retrieval as progressive disclosure: call `search` for compact summaries, then call `get` only for the ids that are relevant to the current task. Agents may call `add` and `forget` when they need to maintain durable memories during normal work. Agents should call `reflect` near the end of a meaningful session to extract durable preferences, instructions, project decisions, or facts learned during the session.
+Agents should usually call `context` when they need concise memory context for the current task. For tighter control, use progressive disclosure manually: call `search` for compact summaries, then call `get` only for the ids that are relevant. Agents may call `add` and `forget` when they need to maintain durable memories during normal work. Agents should call `reflect` near the end of a meaningful session to extract durable preferences, instructions, project decisions, or facts learned during the session.

@@ -68,6 +68,23 @@ func (f *fakeAPI) Search(_ context.Context, _ memory.SearchRequest) ([]memory.Se
 	return nil, nil
 }
 
+func (f *fakeAPI) SearchDetailed(_ context.Context, _ memory.SearchRequest) (memory.SearchResponse, error) {
+	return memory.SearchResponse{
+		Results: []memory.SearchResult{{
+			ID:      "search-001",
+			Kind:    "fact",
+			Summary: "diagnostic search result",
+			Score:   1,
+		}},
+		Diagnostics: memory.SearchDiagnostics{
+			EmbedderUsed:            true,
+			FTSHits:                 1,
+			VectorHits:              1,
+			QueryEmbeddingDimension: 3,
+		},
+	}, nil
+}
+
 func (f *fakeAPI) Forget(_ context.Context, id string) error {
 	if _, ok := f.records[id]; !ok {
 		return memory.ErrNotFound
@@ -166,6 +183,24 @@ func TestRoundTrip_NotFoundErrorMapping(t *testing.T) {
 	_, err := client.Get(context.Background(), "nonexistent")
 	if !errors.Is(err, memory.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestRoundTrip_SearchDetailed(t *testing.T) {
+	fake := newFakeAPI()
+	cfg, _ := startTestServer(t, fake)
+
+	client := storerpc.NewClient(cfg)
+
+	response, err := client.SearchDetailed(context.Background(), memory.SearchRequest{Query: "diagnostics"})
+	if err != nil {
+		t.Fatalf("SearchDetailed: %v", err)
+	}
+	if len(response.Results) != 1 || response.Results[0].ID != "search-001" {
+		t.Fatalf("results = %+v, want search-001", response.Results)
+	}
+	if !response.Diagnostics.EmbedderUsed || response.Diagnostics.FTSHits != 1 || response.Diagnostics.VectorHits != 1 || response.Diagnostics.QueryEmbeddingDimension != 3 {
+		t.Fatalf("diagnostics = %+v, want detailed counts", response.Diagnostics)
 	}
 }
 

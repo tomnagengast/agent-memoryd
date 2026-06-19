@@ -152,6 +152,46 @@ func TestScannerStoresOpenCodeExportedSession(t *testing.T) {
 	}
 }
 
+func TestParseTranscriptInfersProjectFromCodexSessionMetadata(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	transcript := filepath.Join(root, "Users", "tom", ".codex", "sessions", "2026", "06", "18", "rollout.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o755); err != nil {
+		t.Fatalf("mkdir codex transcript dir: %v", err)
+	}
+	data := `{"type":"session_meta","payload":{"cwd":"/Users/tom/repos/tomnagengast/agent-memoryd","source":{"subagent":{"thread_spawn":{"parent_thread_id":"thread"}}}}}` + "\n" +
+		`{"message":{"role":"user","content":"fix project inference"}}` + "\n"
+	if err := os.WriteFile(transcript, []byte(data), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	info, err := os.Stat(transcript)
+	if err != nil {
+		t.Fatalf("stat transcript: %v", err)
+	}
+
+	got, err := parseTranscriptPath(transcript, info)
+	if err != nil {
+		t.Fatalf("parse transcript: %v", err)
+	}
+	if got.CWD != "/Users/tom/repos/tomnagengast/agent-memoryd" {
+		t.Fatalf("cwd = %q, want repo cwd", got.CWD)
+	}
+	if got.Project != "agent-memoryd" {
+		t.Fatalf("project = %q, want agent-memoryd", got.Project)
+	}
+}
+
+func TestTranscriptPathProjectFallbackDoesNotUseCodexDateDirectory(t *testing.T) {
+	t.Parallel()
+	path := "/Users/tom/.codex/sessions/2026/06/18/rollout-2026-06-18T20-51-38.jsonl"
+
+	got := transcriptPathProjectFallback(path)
+
+	if got != "codex" {
+		t.Fatalf("fallback project = %q, want codex", got)
+	}
+}
+
 func TestScannerUsesOpenCodeCLIForOpenCodeRoot(t *testing.T) {
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "opencode")

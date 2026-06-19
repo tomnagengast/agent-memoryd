@@ -2,7 +2,7 @@
 
 Local memory daemon for coding agents.
 
-`agent-memoryd` is a small local service and MCP server that lets coding agents search, fetch, add, and forget durable memories. The project is intended for fresh installs and public contribution, with an optional generic import path for existing JSONL, markdown, and text memories.
+`agent-memoryd` is a small local service and MCP server that lets coding agents search, fetch, retrieve bounded context, add, and forget durable memories. The project is intended for fresh installs and public contribution, with an optional generic import path for existing JSONL, markdown, and text memories.
 
 ## Quick Start
 
@@ -51,7 +51,7 @@ Add and retrieve a memory from the CLI:
 ## Goals
 
 - Local-first memory store for coding agents
-- MCP tools for `search`, `get`, `add`, `forget`, and `reflect`
+- MCP tools for `status`, `context`, `search`, `get`, `add`, `forget`, and `reflect`
 - Agent-managed memories without burning the agent's main turn on note writing
 - Summarizer-driven transcript and git producers that store distilled memories with source pointers
 - zvec-backed retrieval with hybrid full-text and vector search
@@ -148,7 +148,15 @@ See [docs/architecture.md](./docs/architecture.md) for more detail.
 
 ## MCP Tools
 
-`search(query, project?, kind?, limit?)`
+`status()`
+
+Returns compact store and embedder health.
+
+`context(query, project?, kind?, limit?, max_chars?)`
+
+Searches memories, expands the top hits, and returns bounded body context with scores.
+
+`search(query, project?, kind?, limit?, diagnostics?)`
 
 Returns matching memory summaries and ids.
 

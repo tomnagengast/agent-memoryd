@@ -20,14 +20,41 @@ import (
 )
 
 type searchInput struct {
-	Query   string `json:"query" jsonschema:"natural language memory search query"`
-	Project string `json:"project,omitempty" jsonschema:"optional project scope filter"`
-	Kind    string `json:"kind,omitempty" jsonschema:"optional memory kind filter, such as fact or feedback"`
-	Limit   int    `json:"limit,omitempty" jsonschema:"maximum number of results to return"`
+	Query       string `json:"query" jsonschema:"natural language memory search query"`
+	Project     string `json:"project,omitempty" jsonschema:"optional project scope filter"`
+	Kind        string `json:"kind,omitempty" jsonschema:"optional memory kind filter, such as fact or feedback"`
+	Limit       int    `json:"limit,omitempty" jsonschema:"maximum number of results to return"`
+	Diagnostics bool   `json:"diagnostics,omitempty" jsonschema:"include whether FTS and vector search participated"`
 }
 
 type searchOutput struct {
-	Results []memory.SearchResult `json:"results"`
+	Results     []memory.SearchResult     `json:"results"`
+	Diagnostics *memory.SearchDiagnostics `json:"diagnostics,omitempty"`
+}
+
+type contextInput struct {
+	Query    string `json:"query" jsonschema:"natural language memory search query"`
+	Project  string `json:"project,omitempty" jsonschema:"optional project scope filter"`
+	Kind     string `json:"kind,omitempty" jsonschema:"optional memory kind filter, such as fact or feedback"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"maximum number of search results to expand"`
+	MaxChars int    `json:"max_chars,omitempty" jsonschema:"maximum total body characters to return across expanded memories"`
+}
+
+type contextOutput struct {
+	Results   []contextEntry `json:"results"`
+	MaxChars  int            `json:"max_chars"`
+	Truncated bool           `json:"truncated"`
+}
+
+type contextEntry struct {
+	ID            string  `json:"id"`
+	Kind          string  `json:"kind"`
+	Project       string  `json:"project,omitempty"`
+	Source        string  `json:"source,omitempty"`
+	Summary       string  `json:"summary"`
+	Body          string  `json:"body"`
+	BodyTruncated bool    `json:"body_truncated"`
+	Score         float64 `json:"score"`
 }
 
 type getInput struct {
@@ -78,21 +105,56 @@ type reflectOutput struct {
 }
 
 func runMCP(ctx context.Context, cfg config.Config, store memory.API) error {
+	server := newMCPServer(cfg, store)
+	return server.Run(ctx, &mcp.StdioTransport{})
+}
+
+func newMCPServer(cfg config.Config, store memory.API) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "agent-memoryd",
 		Version: "0.1.0",
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "status",
+		Description: "Return compact daemon store and embedder health.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, memory.Status, error) {
+		status, err := store.Status(ctx)
+		if err != nil {
+			return nil, memory.Status{}, err
+		}
+		return nil, status, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "context",
+		Description: "Search local agent memories and expand top hits into concise bounded context.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contextInput) (*mcp.CallToolResult, contextOutput, error) {
+		out, err := buildMemoryContext(ctx, store, in)
+		if err != nil {
+			return nil, contextOutput{}, err
+		}
+		return nil, out, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search",
 		Description: "Search local agent memory summaries. Use get to expand a result only when needed.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, searchOutput, error) {
-		results, err := store.Search(ctx, memory.SearchRequest{
+		req := memory.SearchRequest{
 			Query:   in.Query,
 			Project: in.Project,
 			Kind:    in.Kind,
 			Limit:   in.Limit,
-		})
+		}
+		if in.Diagnostics {
+			response, err := searchMemoryDetailed(ctx, store, req)
+			if err != nil {
+				return nil, searchOutput{}, err
+			}
+			return nil, searchOutput{Results: response.Results, Diagnostics: &response.Diagnostics}, nil
+		}
+		results, err := store.Search(ctx, req)
 		if err != nil {
 			return nil, searchOutput{}, err
 		}
@@ -156,7 +218,109 @@ func runMCP(ctx context.Context, cfg config.Config, store memory.API) error {
 		return nil, out, nil
 	})
 
-	return server.Run(ctx, &mcp.StdioTransport{})
+	return server
+}
+
+const (
+	defaultContextLimit    = 5
+	maxContextLimit        = 20
+	defaultContextMaxChars = 6000
+	maxContextMaxChars     = 20000
+)
+
+func buildMemoryContext(ctx context.Context, store memory.API, in contextInput) (contextOutput, error) {
+	limit := normalizeContextLimit(in.Limit)
+	maxChars := normalizeContextMaxChars(in.MaxChars)
+	results, err := store.Search(ctx, memory.SearchRequest{
+		Query:   in.Query,
+		Project: in.Project,
+		Kind:    in.Kind,
+		Limit:   limit,
+	})
+	if err != nil {
+		return contextOutput{}, err
+	}
+
+	entries := make([]contextEntry, 0, len(results))
+	remaining := maxChars
+	truncated := false
+	for i, result := range results {
+		record, err := store.Get(ctx, result.ID)
+		if errors.Is(err, memory.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return contextOutput{}, err
+		}
+
+		remainingResults := len(results) - i
+		entryBudget := 0
+		if remaining > 0 && remainingResults > 0 {
+			entryBudget = remaining / remainingResults
+			if entryBudget == 0 {
+				entryBudget = remaining
+			}
+		}
+		body, bodyTruncated := limitText(record.Body, entryBudget)
+		if bodyTruncated {
+			truncated = true
+		}
+		remaining -= runeCount(body)
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		entries = append(entries, contextEntry{
+			ID:            record.ID,
+			Kind:          record.Kind,
+			Project:       record.Project,
+			Source:        record.Source,
+			Summary:       record.Summary,
+			Body:          body,
+			BodyTruncated: bodyTruncated,
+			Score:         result.Score,
+		})
+	}
+	return contextOutput{Results: entries, MaxChars: maxChars, Truncated: truncated}, nil
+}
+
+func normalizeContextLimit(limit int) int {
+	if limit <= 0 {
+		return defaultContextLimit
+	}
+	if limit > maxContextLimit {
+		return maxContextLimit
+	}
+	return limit
+}
+
+func normalizeContextMaxChars(maxChars int) int {
+	if maxChars <= 0 {
+		return defaultContextMaxChars
+	}
+	if maxChars > maxContextMaxChars {
+		return maxContextMaxChars
+	}
+	return maxChars
+}
+
+func limitText(text string, maxChars int) (string, bool) {
+	text = strings.TrimSpace(text)
+	if maxChars <= 0 {
+		return "", text != ""
+	}
+	runes := []rune(text)
+	if len(runes) <= maxChars {
+		return text, false
+	}
+	if maxChars <= 3 {
+		return string(runes[:maxChars]), true
+	}
+	return string(runes[:maxChars-3]) + "...", true
+}
+
+func runeCount(text string) int {
+	return len([]rune(text))
 }
 
 func reflectMemories(ctx context.Context, cfg config.Config, store memory.API, in reflectInput) (reflectOutput, error) {
