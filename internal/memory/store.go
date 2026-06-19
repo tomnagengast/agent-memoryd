@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -243,7 +245,12 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 	queryVec, embedErr := s.embedder.Embed(ctx, req.Query)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			s.mu.Unlock()
+		}
+	}()
 
 	// FTS leg using zvec FTS API: NewFTS() + SetMatchString + query.SetFTS
 	ftsQuery := zvec.NewSearchQuery()
@@ -300,12 +307,75 @@ func (s *Store) Search(ctx context.Context, req SearchRequest) ([]SearchResult, 
 			}
 		}
 	}
+	s.mu.Unlock()
+	locked = false
+
+	if filter != "" && embedErr == nil && len(queryVec) == s.dim {
+		bruteResults, err := s.searchFilteredByEmbedding(ctx, req, queryVec, limit)
+		if err == nil && len(bruteResults) > 0 {
+			vecResults = bruteResults
+		}
+	}
 
 	// Blend results
 	if len(vecResults) == 0 {
 		return ftsResults, nil
 	}
 	return blend(ftsResults, vecResults, s.weights), nil
+}
+
+func (s *Store) searchFilteredByEmbedding(ctx context.Context, req SearchRequest, queryVec []float32, limit int) ([]SearchResult, error) {
+	records, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]SearchResult, 0)
+	for _, record := range records {
+		if req.Project != "" && record.Project != req.Project {
+			continue
+		}
+		if req.Kind != "" && record.Kind != req.Kind {
+			continue
+		}
+		vec, embedErr := s.embedder.Embed(ctx, record.Summary+"\n"+record.Body)
+		if embedErr != nil || len(vec) != len(queryVec) {
+			continue
+		}
+		results = append(results, SearchResult{
+			ID:      record.ID,
+			Kind:    record.Kind,
+			Project: record.Project,
+			Source:  record.Source,
+			Summary: record.Summary,
+			Score:   cosineDistance(queryVec, vec),
+		})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			return results[i].ID < results[j].ID
+		}
+		return results[i].Score < results[j].Score
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+func cosineDistance(a, b []float32) float64 {
+	var dot, normA, normB float64
+	for i := range a {
+		af := float64(a[i])
+		bf := float64(b[i])
+		dot += af * bf
+		normA += af * af
+		normB += bf * bf
+	}
+	if normA == 0 || normB == 0 {
+		return 1
+	}
+	cosine := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return 1 - cosine
 }
 
 func (s *Store) List(ctx context.Context) ([]Record, error) {

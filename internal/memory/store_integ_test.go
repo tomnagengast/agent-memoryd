@@ -6,7 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +42,38 @@ func (s *switchableEmbedder) Embed(_ context.Context, _ string) ([]float32, erro
 	for i := range vec {
 		vec[i] = 0.1
 	}
+	return vec, nil
+}
+
+type keywordEmbedder struct{ dim int }
+
+func (k keywordEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
+	vec := make([]float32, k.dim)
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "arborist") || strings.Contains(lower, "canopy") || strings.Contains(lower, "tree doctor"):
+		vec[0] = 1
+	case strings.Contains(lower, "ferment") || strings.Contains(lower, "yeast") || strings.Contains(lower, "wine tank"):
+		vec[1] = 1
+	case strings.Contains(lower, "keyboard") || strings.Contains(lower, "typing"):
+		vec[2] = 1
+	default:
+		vec[3] = 1
+	}
+	return vec, nil
+}
+
+type swappableKeywordEmbedder struct {
+	dim     int
+	swapped bool
+}
+
+func (s *swappableKeywordEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	vec, err := (keywordEmbedder{dim: s.dim}).Embed(ctx, text)
+	if err != nil || !s.swapped {
+		return vec, err
+	}
+	vec[0], vec[1] = vec[1], vec[0]
 	return vec, nil
 }
 
@@ -339,6 +374,198 @@ func TestBackfillEmbedsNullVectors(t *testing.T) {
 	}
 	if status2.Embedder.Dimension != 128 {
 		t.Fatalf("phase2: expected Embedder.Dimension=128, got %d", status2.Embedder.Dimension)
+	}
+}
+
+func TestEmbeddedAddVectorSearchPersistsAcrossProcesses(t *testing.T) {
+	if os.Getenv("MEMORYD_VECTOR_PERSIST_HELPER") != "" {
+		runVectorPersistHelper(t)
+		return
+	}
+	if os.Getenv("CGO_ENABLED") == "0" {
+		t.Skip("skipping: cgo disabled")
+	}
+	dir := t.TempDir()
+	for _, phase := range []string{"write", "read"} {
+		cmd := exec.Command(os.Args[0], "-test.run=TestEmbeddedAddVectorSearchPersistsAcrossProcesses", "--", dir, phase)
+		cmd.Env = append(os.Environ(), "MEMORYD_VECTOR_PERSIST_HELPER=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s helper failed: %v\n%s", phase, err, out)
+		}
+	}
+}
+
+func TestFilteredVectorSearchFindsProjectResultWithDistractors(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("CGO_ENABLED") == "0" {
+		t.Skip("skipping: cgo disabled")
+	}
+	dir := t.TempDir()
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     filepath.Join(dir, "zvec"),
+		EmbeddingDim: 768,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0,
+		VectorWeight: 1,
+		Embedder:     keywordEmbedder{dim: 768},
+	})
+	if err != nil {
+		t.Skipf("skipping: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		_, err := store.Add(ctx, memory.AddRequest{
+			ID:      "distractor-" + strconv.Itoa(i),
+			Project: "other",
+			Summary: "Tree doctor distractor",
+			Body:    "An arborist can diagnose a sick street tree.",
+		})
+		if err != nil {
+			t.Fatalf("add distractor %d: %v", i, err)
+		}
+	}
+	_, err = store.Add(ctx, memory.AddRequest{
+		ID:      "target:arborist",
+		Project: "target",
+		Summary: "Sycamore canopy inspection",
+		Body:    "An arborist assessed a street tree with drought stress.",
+	})
+	if err != nil {
+		t.Fatalf("add target: %v", err)
+	}
+	results, err := store.Search(ctx, memory.SearchRequest{
+		Project: "target",
+		Query:   "tree doctor",
+		Limit:   1,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected filtered vector result, got none")
+	}
+	if results[0].ID != "target_arborist" {
+		t.Fatalf("top result = %s, want target_arborist; results=%+v", results[0].ID, results)
+	}
+}
+
+func TestFilteredVectorSearchRecomputesFilteredEmbeddings(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("CGO_ENABLED") == "0" {
+		t.Skip("skipping: cgo disabled")
+	}
+	dir := t.TempDir()
+	emb := &swappableKeywordEmbedder{dim: 768, swapped: true}
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     filepath.Join(dir, "zvec"),
+		EmbeddingDim: 768,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0,
+		VectorWeight: 1,
+		Embedder:     emb,
+	})
+	if err != nil {
+		t.Skipf("skipping: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	_, err = store.Add(ctx, memory.AddRequest{
+		ID:      "target:z-arborist",
+		Project: "target",
+		Summary: "Sycamore canopy inspection",
+		Body:    "An arborist assessed a street tree with drought stress.",
+	})
+	if err != nil {
+		t.Fatalf("add arborist: %v", err)
+	}
+	_, err = store.Add(ctx, memory.AddRequest{
+		ID:      "target:a-fermentation",
+		Project: "target",
+		Summary: "Fermentation vessel sanitation",
+		Body:    "Clean the wine tank before pitching yeast.",
+	})
+	if err != nil {
+		t.Fatalf("add fermentation: %v", err)
+	}
+	emb.swapped = false
+	results, err := store.Search(ctx, memory.SearchRequest{
+		Project: "target",
+		Query:   "tree doctor",
+		Limit:   2,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected filtered vector result, got none")
+	}
+	if results[0].ID != "target_z-arborist" {
+		t.Fatalf("top result = %s, want target_z-arborist; results=%+v", results[0].ID, results)
+	}
+}
+
+func runVectorPersistHelper(t *testing.T) {
+	t.Helper()
+	args := os.Args
+	if len(args) < 3 {
+		t.Fatal("missing helper args")
+	}
+	dir, phase := args[len(args)-2], args[len(args)-1]
+	store, err := memory.Open(memory.OpenConfig{
+		ZvecPath:     filepath.Join(dir, "zvec"),
+		EmbeddingDim: 768,
+		LockTimeout:  2 * time.Second,
+		FTSWeight:    0,
+		VectorWeight: 1,
+		Embedder:     keywordEmbedder{dim: 768},
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	switch phase {
+	case "write":
+		_, err := store.Add(ctx, memory.AddRequest{
+			ID:      "persist:arborist",
+			Project: "vector-persist",
+			Summary: "Sycamore canopy inspection",
+			Body:    "An arborist assessed a street tree with drought stress.",
+		})
+		if err != nil {
+			t.Fatalf("add arborist: %v", err)
+		}
+		_, err = store.Add(ctx, memory.AddRequest{
+			ID:      "persist:fermentation",
+			Project: "vector-persist",
+			Summary: "Fermentation vessel sanitation",
+			Body:    "Clean the wine tank before pitching yeast.",
+		})
+		if err != nil {
+			t.Fatalf("add fermentation: %v", err)
+		}
+		if err := store.Optimize(ctx); err != nil {
+			t.Fatalf("optimize: %v", err)
+		}
+	case "read":
+		results, err := store.Search(ctx, memory.SearchRequest{
+			Project: "vector-persist",
+			Query:   "tree doctor",
+			Limit:   2,
+		})
+		if err != nil {
+			t.Fatalf("search: %v", err)
+		}
+		if len(results) == 0 {
+			t.Fatal("expected vector results after reopen, got none")
+		}
+		if results[0].ID != "persist_arborist" {
+			t.Fatalf("top result = %s, want persist_arborist; results=%+v", results[0].ID, results)
+		}
+	default:
+		t.Fatalf("unknown helper phase %q", phase)
 	}
 }
 
